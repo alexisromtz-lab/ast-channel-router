@@ -62,6 +62,11 @@ trae el suyo. Se imprime en cada salida para que la corrida sea auditable.
 ]}
 ```
 
+El ejemplo distribuido, `examples/indice_ejemplo.json`, declara 3 soluciones y cada una
+trae los 5 campos del formato: `len(d['soluciones'])` y `len(d['soluciones'][0])` son
+las dos cifras que el contrato semántico de este repositorio verifica contra esta prosa
+(`.github/claims.json`).
+
 `CAMPOS_TEXTO = ("problema", "solucion", "dominio", "cuando_aplicar")` — cambiar el
 texto de comparación y las stopwords a la vez hace inatribuible cualquier mejora: un
 solo actor por medición.

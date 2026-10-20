@@ -1,0 +1,23 @@
+{
+  "huella": "HUELLA-CLAIMS-AST-CHANNEL-ROUTER-20261020",
+  "repo": "ast-channel-router",
+  "clase": "A",
+  "claims": [
+    {
+      "id": "soluciones_del_ejemplo",
+      "afirma": "3 soluciones",
+      "dato": "examples/indice_ejemplo.json",
+      "deriva": "len(dato.soluciones)",
+      "polaridad": "exacto",
+      "prosa": "README.md"
+    },
+    {
+      "id": "campos_por_solucion",
+      "afirma": "5 campos",
+      "dato": "examples/indice_ejemplo.json",
+      "deriva": "len(dato.soluciones[0])",
+      "polaridad": "exacto",
+      "prosa": "README.md"
+    }
+  ]
+}
