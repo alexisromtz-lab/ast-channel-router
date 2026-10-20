@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ast-channel-router"
+version = "1.0.0"
+description = "Recuperacion estructural de codigo por canales ponderados sobre el AST."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "Platino Labs" }]
+keywords = ["ast", "code-search", "retrieval", "jaccard", "bug-localization"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = []
+
+[project.scripts]
+ast-router = "router_soluciones_v2:main"
+
+[tool.setuptools]
+py-modules = [
+  "router_soluciones_v2",
+  "canales_v5_20261019",
+  "ingesta_ast_20261019",
+  "extractor_ast",
+]

@@ -1,0 +1,17 @@
+{"soluciones": [
+  {"id": "SOL-A",
+   "problema": "el cargador de configuracion revienta cuando la clave no existe",
+   "solucion": "distinguir ausente de vacio antes de indexar y declarar el error con la ruta",
+   "dominio": "parsing",
+   "cuando_aplicar": "la consulta trae AttributeError o KeyError sobre un objeto opcional"},
+  {"id": "SOL-B",
+   "problema": "el filtro de rango excluye el ultimo elemento de la lista",
+   "solucion": "frontera inclusiva con el largo como limite superior comprobado",
+   "dominio": "frontera",
+   "cuando_aplicar": "la consulta menciona off by one, frontera o ultimo elemento"},
+  {"id": "SOL-C",
+   "problema": "division por cero cuando el denominador es una coleccion vacia",
+   "solucion": "denominador declarado con guarda explicita y resultado vacio definido",
+   "dominio": "denominador",
+   "cuando_aplicar": "la consulta trae ZeroDivisionError o un promedio sobre cero elementos"}
+]}

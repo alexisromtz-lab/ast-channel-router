@@ -1,0 +1,270 @@
+#!/usr/bin/env python3
+# HUELLA-EXTRACTOR-AST-20261019
+"""Extractor reutilizable de canales estructurales (AST) para texto y codigo.
+
+QUE ES Y QUE NO ES
+  No es un enrutador y no decide nada: no tiene pesos ni umbral. Convierte una
+  entrada (un issue, un cuerpo de PR, una traza de excepcion, o el codigo fuente
+  de un modulo) en los cuatro canales que el metro V5 ya sabe puntuar.
+  Pesos, umbral y reglas de puntuacion viven SOLO en canales_v5_20261019.pycanales_v5_20261019.py
+  y aqui se IMPORTAN, nunca se copian: un metro duplicado son dos metros.
+
+ENTRADA -> VIA (declarada, no adivinada)
+  via "ast"    el texto parsea como modulo de Python y trae estructura
+               (def/class/raise/import). Se recorre con el mismo recorredor de
+               la ingesta y cada nodo aporta su estructura al documento.
+  via "texto"  todo lo demas (traza pegada, issue en prosa, cuerpo de PR).
+               Se usa `canales_v5.extraer`, que absorbe primero los tramos
+               entre acentos graves y luego clasifica por precedencia
+               rutas > excepciones > simbolos > prosa.
+  El modo se puede forzar con `forzar="ast"|"texto"` cuando el llamador sabe
+  mas que el detector. Forzar no cambia el metro, solo el camino.
+
+SALIDA
+  Registro JSON: listas ordenadas y conteos. Determinista: dos corridas sobre
+  la misma entrada dan el mismo objeto, sin hora dentro (la hora la pone quien
+  llama, no el objeto).
+
+LIMITES DECLARADOS
+  (1) Hereda el metro de la V5 tal cual, incluidos sus defectos corregidos:
+      extension como ruta, nombre generico de modulo, dunder de protocolo,
+      simbolo sin ruta que lo corrobore. No los repara ni los repite.
+  (2) `canales_de_fuente` reutiliza `ingesta_ast._recorrer` (API privada de la
+      ingesta) con guarda: si esa pieza cambia de forma, se cae con RC 2 en vez
+      de inventar nodos.
+  (3) `prosa` es la bolsa COMPLETA de la V2 (`V2.tokenizar` del texto entero):
+      los canales duros son evidencia adicional, no un filtro que la encoja.
+  (4) Un `raise ValueError` es estructura, pero el metro lo archiva en
+      `excepciones_genericas` porque el tipo es comun. No se cambia aqui: el
+      metro suma `excepciones | excepciones_genericas` al puntuar el
+      DOCUMENTO (sim/canales_v5_20261019.py, `puntuar`, medido 2026-10-20
+      00:27:46Z), asi que el efecto documental es el mismo; lo que la
+      genericidad bloquea es el lado CONSULTA. Se declara, no se repara: mover
+      esa frontera invalidaria F1-F4.
+  (5) No entiende el problema: mide a donde apunta la consulta, no si la
+      solucion es correcta ni si el parche compila.
+  (5) El detector de "es codigo" es por parseo, no por palabras clave: un texto
+      que no parsea nunca entra por la via AST, aunque hable de Python.
+
+RC: 0 medido · 2 entrada ilegible o API de la ingesta ausente · 4 autotest rojo
+"""
+
+import argparse
+import ast
+import json
+import os
+import sys
+
+# Corte publico: el arbol es PLANO (los modulos se importan entre si desde su
+# propio directorio). El original derivaba RAIZ/sim porque vivia un nivel abajo.
+RAIZ = os.path.dirname(os.path.abspath(__file__))
+if RAIZ not in sys.path:
+    sys.path.insert(0, RAIZ)
+
+import canales_v5_20261019 as CH  # noqa: E402  el metro, importado
+import ingesta_ast_20261019 as ING  # noqa: E402  el recorredor, importado
+
+HUELLA = "HUELLA-EXTRACTOR-AST-20261019"
+ESQUEMA = "canales_ast/v1"
+CANALES = CH.CANALES
+
+NODOS_ESTRUCTURA = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef,
+                    ast.Raise, ast.Import, ast.ImportFrom)
+
+RC_OK, RC_USO, RC_DEGRADA = 0, 2, 4
+
+
+def _vacio():
+    return {"simbolos": set(), "excepciones": set(),
+            "excepciones_genericas": set(), "rutas": set(), "prosa": set()}
+
+
+def _fusionar(dst, src):
+    for k, v in src.items():
+        dst.setdefault(k, set()).update(v)
+    return dst
+
+
+def a_registro(canales, via, unidades):
+    """Vuelve el diccionario de conjuntos en un registro JSON, ordenado."""
+    return {
+        "esquema": ESQUEMA,
+        "huella": HUELLA,
+        "via": via,
+        "unidades": int(unidades),
+        "n": {k: len(canales.get(k) or ()) for k in CANALES},
+        "canales": {k: sorted(canales.get(k) or ()) for k in CANALES},
+        "excepciones_genericas": sorted(canales.get("excepciones_genericas") or ()),
+    }
+
+
+def parece_fuente(texto):
+    """True si el texto parsea como modulo y trae estructura (via AST)."""
+    if not texto or not texto.strip():
+        return False
+    try:
+        arbol = ast.parse(texto)
+    except (SyntaxError, ValueError, TypeError):
+        return False
+    return any(isinstance(n, NODOS_ESTRUCTURA) for n in ast.walk(arbol))
+
+
+def canales_de_texto(texto):
+    """Canales de una traza, un issue o un cuerpo de PR (sets)."""
+    return CH.extraer(texto or "")
+
+
+def canales_de_fuente(codigo, rel=""):
+    """Canales de un modulo de Python: suma la estructura de todos sus nodos.
+
+    Devuelve (canales, n_nodos). El cuerpo y el docstring de cada nodo entran
+    por `prosa`; la ruta, el nombre calificado, los parametros, los decoradores,
+    los callees y los `raise` entran por los canales duros.
+    """
+    if not hasattr(ING, "_recorrer") or not hasattr(ING, "canales_de_nodo"):
+        raise RuntimeError("ingesta_ast sin _recorrer/canales_de_nodo: API cambiada")
+    lineas = (codigo or "").splitlines()
+    nodos = []
+    ING._recorrer(ast.parse(codigo or ""), "", rel or "modulo.py", lineas, nodos)
+    acumulado = _vacio()
+    partes = [p for p in (rel or "").split("/") if p]
+    if partes:
+        CH.sumar_ruta(acumulado, partes)
+        if "." in partes[-1]:
+            CH.sumar_ruta(acumulado, [partes[-1].rsplit(".", 1)[0]])
+    for nodo in nodos:
+        _fusionar(acumulado, ING.canales_de_nodo(nodo))
+    return acumulado, len(nodos)
+
+
+def extraer_canales_ast(texto_o_codigo, rel="", forzar=None):
+    """Punto de entrada unico: texto o codigo -> registro de canales JSON."""
+    texto = texto_o_codigo or ""
+    modo = forzar if forzar in ("ast", "texto") else (
+        "ast" if parece_fuente(texto) else "texto")
+    if modo == "ast":
+        canales, unidades = canales_de_fuente(texto, rel)
+    else:
+        canales, unidades = canales_de_texto(texto), 1
+    return a_registro(canales, modo, unidades)
+
+
+# --------------------------------------------------------------------------
+# Autotest: controles con resultado conocido, incluido uno negativo.
+# --------------------------------------------------------------------------
+
+CASO_TRAZA = (
+    "yaml.scanner.ScannerError: while scanning a simple key\n"
+    "  in \"config/app.yaml\", line 12, column 1\n"
+    "Traceback (most recent call last):\n"
+    "  File \"yaml/scanner.py\", line 145, in fetch_more_tokens\n"
+    "    self.scan_to_next_token()\n"
+    "  File \"yaml/scanner.py\", line 160, in scan_to_next_token\n"
+    "yaml.scanner.ScannerError: could not find expected ':'\n"
+)
+
+CASO_FUENTE = '''\
+def cargar(ruta):
+    """Lee un archivo yaml."""
+    try:
+        with open(ruta) as fh:
+            return fh.read()
+    except OSError:
+        raise RuntimeError("no se pudo leer " + ruta)
+'''
+
+CASO_SIN_ESTRUCTURA = "el proceso se cae a media noche y no se por que"
+
+
+def autotest():
+    fallos = []
+
+    r1 = extraer_canales_ast(CASO_TRAZA)
+    if r1["via"] != "texto":
+        fallos.append("C1 via=%r (esperado texto)" % r1["via"])
+    if "scannererror" not in r1["canales"]["excepciones"]:
+        fallos.append("C1 excepciones sin scannererror")
+    if "scanner" not in r1["canales"]["rutas"]:
+        fallos.append("C1 rutas sin scanner")
+
+    r2 = extraer_canales_ast(CASO_FUENTE, rel="lib/io_util.py")
+    if r2["via"] != "ast":
+        fallos.append("C2 via=%r (esperado ast)" % r2["via"])
+    # `RuntimeError` es generico: el metro lo archiva en excepciones_genericas
+    # (limite 4 de la cabecera) y lo suma al documento en `puntuar`.
+    if "valueerror" not in r2["canales"]["excepciones"] and \
+            "runtimeerror" not in r2["excepciones_genericas"]:
+        fallos.append("C2 sin runtimeerror en genericas ni valueerror en duras")
+    if "cargar" not in r2["canales"]["simbolos"]:
+        fallos.append("C2 simbolos sin cargar")
+    if "io_util" not in r2["canales"]["rutas"]:
+        fallos.append("C2 rutas sin io_util")
+
+    r3 = extraer_canales_ast(CASO_SIN_ESTRUCTURA)
+    duros = (len(r3["canales"]["simbolos"]) + len(r3["canales"]["excepciones"])
+             + len(r3["canales"]["rutas"]))
+    if duros != 0:
+        fallos.append("C3 control negativo con %d canales duros" % duros)
+    if not r3["canales"]["prosa"]:
+        fallos.append("C3 prosa vacia: no midio nada")
+
+    if extraer_canales_ast(CASO_TRAZA) != extraer_canales_ast(CASO_TRAZA):
+        fallos.append("C4 no determinista")
+
+    return fallos, (r1, r2, r3)
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="Extractor de canales AST (no enruta)")
+    ap.add_argument("--texto", help="texto libre: traza, issue o cuerpo de PR")
+    ap.add_argument("--archivo", help="modulo de Python a extraer")
+    ap.add_argument("--rel", default="", help="ruta relativa declarada del modulo")
+    ap.add_argument("--forzar", choices=("ast", "texto"))
+    ap.add_argument("--autotest", action="store_true")
+    ap.add_argument("--json", action="store_true")
+    args = ap.parse_args(argv)
+
+    if args.autotest:
+        fallos, _ = autotest()
+        for f in fallos:
+            print("ROJO " + f)
+        print("AUTOTEST %s (%d controles)" % ("PASA" if not fallos else "FALLA", 4))
+        return RC_OK if not fallos else RC_DEGRADA
+
+    entrada = None
+    rel = args.rel
+    if args.archivo:
+        try:
+            with open(args.archivo, "r", encoding="utf-8", errors="replace") as fh:
+                entrada = fh.read()
+        except OSError as exc:
+            print("ILEGIBLE " + str(exc))
+            return RC_USO
+        rel = rel or os.path.basename(args.archivo)
+    elif args.texto:
+        entrada = args.texto
+    else:
+        ap.print_help()
+        return RC_USO
+
+    try:
+        reg = extraer_canales_ast(entrada, rel=rel, forzar=args.forzar)
+    except (SyntaxError, RuntimeError) as exc:
+        print("NO_MEDIDO " + str(exc))
+        return RC_USO
+
+    if args.json:
+        print(json.dumps(reg, ensure_ascii=False, indent=2, sort_keys=True))
+    else:
+        print("via=%s unidades=%d" % (reg["via"], reg["unidades"]))
+        for k in CANALES:
+            print("%-20s %d %s" % (k, reg["n"][k], reg["canales"][k][:6]))
+        if reg["excepciones_genericas"]:
+            print("%-20s %d %s" % ("excepciones_genericas",
+                                    len(reg["excepciones_genericas"]),
+                                    reg["excepciones_genericas"][:6]))
+    return RC_OK
+
+
+if __name__ == "__main__":
+    sys.exit(main())
