@@ -2,6 +2,9 @@
   "huella": "HUELLA-CLAIMS-AST-CHANNEL-ROUTER-20261020",
   "repo": "ast-channel-router",
   "clase": "A",
+  "datos": {
+    "examples/indice_ejemplo.json": "6e65e4860f7622bd"
+  },
   "claims": [
     {
       "id": "soluciones_del_ejemplo",
