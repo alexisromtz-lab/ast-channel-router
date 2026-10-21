@@ -8,6 +8,7 @@
       "afirma": "3 soluciones",
       "dato": "examples/indice_ejemplo.json",
       "deriva": "len(dato.soluciones)",
+      "modo": "derivacion",
       "polaridad": "exacto",
       "prosa": "README.md"
     },
@@ -16,6 +17,7 @@
       "afirma": "5 campos",
       "dato": "examples/indice_ejemplo.json",
       "deriva": "len(dato.soluciones[0])",
+      "modo": "derivacion",
       "polaridad": "exacto",
       "prosa": "README.md"
     }
