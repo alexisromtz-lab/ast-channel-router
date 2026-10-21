@@ -4,6 +4,145 @@
 # HUELLA-CI-TEMPLATE-ADOPTABLE-V4-20261020
 # HUELLA-CI-PYTHON-V5-PROHIBICION-EVAL-20261020
 # HUELLA-CI-PYTHON-V5-ERRATA-1-CONTE-DECORADO-20261020
+# HUELLA-CI-PY-V6-INSTRUMENTO-20261020
+# HUELLA-CI-PY-V7-MODO-COMPUESTO-20261020
+# HUELLA-CI-PY-V8-SIN-DETECCION-20261020
+# HUELLA-CI-PY-V9-VETO-OPERADORES-20261020
+# HUELLA-CI-PY-V10-PYTEST-DECLARADO-20261020
+# HUELLA-CI-PY-V11-VETO-CONSTRUCTOS-20261020
+# HUELLA-CI-VETO-CONSTRUCTOS-20261020
+#
+# CORRECCIÓN 13 (v11, veto de constructos): la v9 vetó los operadores en la
+# SUPERFICIE del `comando:`. Un subshell los esconde un nivel más abajo y el
+# veto de primer nivel no lo ve: `comando: (npx tsc --noEmit || true)` pasaba
+# verde porque el `||` vive dentro del paréntesis, y `$(… )`, el retroceso y un
+# `alias` expandido DESPUÉS del validador hacen lo mismo. Ley nueva: se rechazan
+# los constructos que meten un programa o un operador en un nivel que el
+# validador no lee — `(`, `)`, `$(` (y por tanto todo `$( … )`), el retroceso,
+# `alias ` y `exec ` — con el veredicto `CONSTRUCTO_PROHIBIDO`. No se parsea
+# recursivamente: quien necesite agrupar mueve la lógica a un script versionado
+# (`tests/run.sh`) y el aparato lo invoca. Una línea de aparato, la lógica en un
+# archivo.
+#   · QUOTE-AWARE (medido, no supuesto): los constructos DENTRO de comillas
+#     simples o dobles son literales y se permiten — `python -m pytest -k
+#     "test (foo)"` sigue verde. Se borran los tramos entrecomillados antes de
+#     buscar; el resto se mira igual que en la v9, y los operadores `;` `|` `&`
+#     `set +…` siguen vetados.
+#   · MEDIDO ANTES DE ESCRIBIR (2026-10-20): censo por API de los 22 aparatos
+#     del portafolio contra la ley nueva — 22 `OPERADORES_OK`, 0 rojos. Ningún
+#     adoptante usa paréntesis, sustitución, retroceso, `alias` ni `exec` fuera
+#     de comillas: la ley no pone rojo a nadie hoy.
+#   · LÍMITE DECLARADO (séptimo orden): la quote-awareness es mínima — solo
+#     `'…'` y `"…"`. No maneja escapes (`\`) ni here-docs; un here-doc no lo
+#     detecta este veto (el aparato es una línea, y una línea no lleva here-doc
+#     real). La lista de constructos es CERRADA: un `{ … }` de bash se añade en
+#     una tupla nueva, no se inventa aquí.
+#
+# CORRECCIÓN 12 (v10, pytest declarado): el paso de instalación hacía
+# `python -m pip install pytest` ANTES de mirar el manifiesto, para TODOS los
+# aparatos. Medido el 2026-10-20 (censo de los 8 aparatos que invocan pytest,
+# PREREGISTRO_CENSO_PYTEST_PLANTILLA_20261020.md §9): 6 repos invocaban pytest
+# sin declararlo en ningún manifiesto y firmaban verde porque el runner se lo
+# regalaba; `plasma-ade` lo tenía solo dentro de un comentario; `protocol-core`
+# lo negaba en README y NOTICE. El runner no puede ser la dependencia de nadie:
+# si el repo no la declara, no se instala y el job cae con
+# DEPENDENCIA_NO_DECLARADA. Declarar cuesta una línea; que el runner tape la
+# falta es lo que vuelve invisible el hueco.
+#   · Alcance medido: 8 aparatos, 7 invocan pytest y los 7 declaran tras B1
+#     (HUELLA-CENSO-PYTEST-PLANTILLA-DECLARACIONES-20261020); 1 (platino-corpus,
+#     `mide: manifiesto`) no invoca y no se le instala nada. 0 rojos esperados.
+#   · `pip install -e .` NO instala extras: quien declare pytest en
+#     `[project.optional-dependencies]` no lo tiene importable tras `-e .`. Ese
+#     caso se mide (`import pytest`) y se instala DESPUÉS de verificar la
+#     declaración, con la spec declarada en el manifiesto, no con una versión
+#     ciega elegida por el runner.
+#   · LÍMITE DECLARADO: la detección de la declaración es textual (una línea
+#     activa `pytest…` en requirements.txt, o una spec `"pytest…"` entre
+#     comillas en pyproject.toml). Un manifiesto que la construya por
+#     sustitución no se distingue.
+#
+# CORRECCIÓN 11 (v9, veto de operadores): el validador miraba el PRIMER TOKEN y
+# no los OPERADORES. `comando: python -m ruff check . || true` pasaba la whitelist
+# de `sintaxis` (el primer token es `python -m ruff`) y el `|| true` devolvía rc 0
+# aunque el chequeador fallara: el aparato firmaba `SINTAXIS_OK` con el chequeador
+# roto. Misma familia que el `eval` que solo inspecciona el primer token, y el
+# mismo hueco que la v7 de la ley hermana de Node cierra en el mismo acto.
+#   · MEDIDO ANTES DE ESCRIBIR (2026-10-20): censo por API de los 20 aparatos del
+#     portafolio — `&&` en 6 (todos `manifiesto+tests`), `;` 0, `|` 0, `&` 0,
+#     `set +…` 0. El veto no pone rojo a ningún adoptante; `&&` se conserva porque
+#     propaga el fallo y es la forma legítima de encadenar manifiesto y tests.
+#   · Alcance declarado: hoy 0 repos Python declaran `sintaxis` (censo: 1
+#     adoptante en todo el portafolio, `meta-webhook`, y es Node). El veto se
+#     escribe igual porque el hueco es de la LEY, no del adoptante: una ley con un
+#     agujero espera a que alguien lo encuentre.
+#   · LÍMITE DECLARADO: el veto es textual, no un parser de shell. Un operador
+#     construido por sustitución (`$(printf '\x3b')`) o un `&` dentro de comillas
+#     no se distingue; fabricarlo exige escribirlo en el diff. Se declara.
+#
+# CORRECCIÓN 10 (v8, sin detección): se RETIRA la rama de DETECCIÓN. v7
+# autodeclaraba: sin `.github/ci-apparatus` y con cualquier `test_*.py` presente
+# escribía `APPARATUS_DETECTED: pytest`, `MIDE=tests`, `EVIDENCIA=junitxml`,
+# `ORIGEN=detectado` y el job firmaba VERDE. Medido en el falsador de esta misma
+# ley (caso C4, acta ACTA_GW_DECLARACION_20261020.md §4): borrar la declaración
+# de un repo con tests devolvía verde. La detección no es una declaración: es
+# una suposición del instrumento, y una suposición con rc 0 es exactamente el
+# falso verde que esta ley existe para matar. v8: sin `.github/ci-apparatus` el
+# job cae con NO_APPARATUS_DECLARED, tenga o no archivos `test_*.py`.
+#   · Riesgo medido antes de escribir, no supuesto: censo por API 2026-10-21T02:0xZ
+#     sobre los 15 repos que montan esta ley en `main` -> 15 declaran, 0 firmaban
+#     por detección. La v8 no pone rojo a ningún adoptante legítimo.
+#   · Se retira con ella la segunda rama muerta de la guarda de vacuidad
+#     (`VACUIDAD_OK` / `NO_TESTS_FOUND`, que solo se alcanzaba con
+#     ORIGEN=detectado). `ORIGEN` sigue en el entorno para el contrato de la
+#     guarda, pero ya no tiene más valor que `declarado`.
+#   · LÍMITE DECLARADO: el contrato no puede distinguir un `ci-apparatus`
+#     declarado a mano de uno generado; v8 exige que EXISTA y que su evidencia
+#     verifique, no que alguien lo haya pensado.
+#
+# CORRECCIÓN 9 (v7, modo compuesto): medido 2026-10-21T01:39Z en los logs de
+# fotonica-monotile (run 39528566405) y optica-kerr-2d (run 39528573559), hay
+# aparatos que MIDEN DOS COSAS y solo certifican una:
+# `python .github/verify_manifest.py && python -m pytest -q tests` declarado
+# `mide: manifiesto` corre pytest — la cadena `&&` propaga su rc, así que un
+# test rojo YA ponía el job rojo (no era un falso verde de rc) — pero el
+# certificado habla sólo de artefactos: «MANIFIESTO_SANO: 17» con «19 passed»
+# en el log, «MANIFIESTO_SANO: 21» con «9 passed». El conteo de tests existía
+# en el TEXTO y no en el CONTRATO: declarado, no exigido. v7 admite `mide:`
+# COMPUESTO (`manifiesto+tests`) y `evidencia:` como lista separada por `;`:
+# el token `junitxml` certifica los tests con el instrumento de la v6, el regex
+# certifica el veredicto textual con el entero > 0 de la v5, y TODOS los modos
+# declarados tienen que verificar o el job cae con EVIDENCIA_INCOMPLETA.
+#   · No relaja nada: sigue prohibido el eval en línea, sigue exigido el parseo
+#     de <testcase> cuando hay tests y el entero > 0 cuando hay manifiesto.
+#   · El orden de verificación es fijo (sintaxis -> manifiesto/banco -> tests);
+#     el orden de `mide:` documenta la intención, no cambia qué se ejecuta: el
+#     que manda sobre la ejecución es `comando:`.
+#   · Compatibilidad medida, no supuesta: `mide:` de un solo valor se comporta
+#     exactamente igual que en v6 (14 repos verdes con la v6; el falsador local
+#     cubre el control de no-regresión).
+#   · `manifiesto+banco` se rechaza: dos veredictos textuales en un solo
+#     aparato no se pueden atribuir a cuál de los dos imprimió qué.
+#
+# CORRECCIÓN 8 (v6, instrumento): se RETIRA la matriz de texto. El texto del
+# runner no es un contrato: cambia con la versión, con el reporter y con la
+# terminal (sangría de mocha, glifo «ℹ» de node 24, `===== 26 passed =====` de
+# pytest sin -q: tres falsos rojos medidos, uno por formato). v6 mide el
+# INSTRUMENTO: `mide: tests` exige `evidencia: junitxml`, el comando escribe
+# /tmp/junit.xml y el veredicto se cuenta sobre elementos <testcase>.
+#   · Se rechaza `grep -oP '(?<=tests=")'` + `head -1` como se dictó: `-P` no es
+#     portable y `head -1` toma el primer <testsuite>, que en un informe con
+#     varios ficheros o clases SUBCUENTA. Se cuentan los <testcase> del árbol.
+#   · Se rechaza que el script AÑADA `--junitxml` si falta: inyectar el flag es
+#     la misma reescritura oculta que la ERRATA 2 (`pytest` -> `python -m
+#     pytest -q`). El flag va en la declaración, donde se ve.
+#   · El XML manda sobre el rc: un envoltorio que se coma el rc pero deje
+#     <failure> en el informe cae en TESTS_FAILED.
+#   · Casos omitidos: 0 ejecutados de N casos es VACUIDAD_SKIP. Medir el
+#     instrumento incluye medir que el instrumento midió algo.
+#   · LÍMITE DECLARADO: un aparato que ESCRIBA un XML falso a mano pasa el
+#     contador. El XML no distingue quién lo escribió; eso lo declara el humano
+#     en `comando:` y ninguna evidencia EN BANDA puede refutarlo. Se cierra el
+#     archivo viejo (mtime anterior a la corrida -> JUNIT_VIEJO), no la mentira.
 #
 # ERRATA 1 (v5, medida en producción): el parseador de conteo no conocía el
 # formato NO silencioso de pytest — `====== 26 passed in 0.10s ======` — y puso
@@ -20,15 +159,29 @@
 # (skipped = «no medí», nunca un verde) y solo mide donde se adopta.
 #
 # ADOPTAR: copiar este archivo a <repo>/.github/workflows/ci.yml .
-#   · repo con tests pytest  -> con eso basta (se detectan test_*.py / *_test.py).
-#   · repo cuyo aparato NO es pytest -> declarar el contrato de DOS campos en
+#   · v8: SIN `.github/ci-apparatus` el job FALLA (NO_APPARATUS_DECLARED). Ya no
+#     hay «con eso basta»: un repo con tests pytest declara igual su aparato.
+#       comando: python -m pytest -q tests --junitxml=/tmp/junit.xml
+#       mide: tests
+#       evidencia: junitxml
+#   · repo cuyo aparato NO es pytest -> declarar el contrato de TRES campos en
 #     <repo>/.github/ci-apparatus:
 #
 #         comando: <comando real, nunca eval en línea>
 #         mide: tests | sintaxis | manifiesto | banco
-#         evidencia: <regex que el verificador imprime al medir>   # manifiesto | banco
+#                  | manifiesto+tests     # COMPUESTO (v7): todos los modos que
+#                  | banco+tests          #   se declaren tienen que verificar
+#         evidencia: junitxml            # obligatorio si mide=tests
+#                  | <regex literal>     # obligatorio si mide=manifiesto | banco
+#                  | <regex literal>; junitxml   # COMPUESTO (v7): lista con `;`
 #
-#     · tests      -> una salida de runner que reporte tests ejecutados (> 0).
+#     · compuesto  -> `mide: manifiesto+tests` exige LAS DOS evidencias: el regex
+#                     (con entero > 0) y el token junitxml. Si falta una,
+#                     EVIDENCIA_INCOMPLETA nombra cuál. Un certificado que cubre
+#                     un modo y no el otro es el agujero que v7 cierra.
+#     · tests      -> el comando DEBE escribir /tmp/junit.xml y se declara
+#                     `--junitxml=/tmp/junit.xml` dentro de `comando:`. El
+#                     veredicto se cuenta sobre <testcase>, no sobre el texto.
 #     · sintaxis   -> un chequeador de la whitelist (py_compile | compileall |
 #                     mypy | ruff | flake8 | pylint | pyright), vía `-m` si es python.
 #     · manifiesto -> veredicto con conteo (el "N" del veredicto tiene que ser > 0).
@@ -56,6 +209,9 @@
 #   · Reparto medido (2026-10-20): 7 repos `python .github/verify_manifest.py`
 #     (manifiesto) · 2 repos manifiesto+pytest · 5 repos pytest (tests) ·
 #     3 repos banco must-fail (banco) · 3 repos sin declaración (detección pytest).
+#   · Reparto medido para v6 (2026-10-20T23:4x Z, por declaración): 7 repos
+#     `mide: tests` (migran a junitxml) · 7 `manifiesto` · 3 `banco` · 3 sin
+#     declaración (detección, el workflow les pone el flag) · 2 Node (otra ley).
 #
 # FALSIFICADOR (medido, no supuesto) en alexisromtz-lab/ci-fail-closed-falsifier,
 # PÚBLICO desde 2026-10-20T22:16:30Z: la cita es auditable sin token (API anónima
@@ -106,7 +262,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Resolver el aparato (contrato v5 — declaración gana a detección)
+      - name: Resolver el aparato (contrato v8 — declaración obligatoria, sin detección)
         run: |
           set -euo pipefail
           if [ -f .github/ci-apparatus ]; then
@@ -117,7 +273,7 @@ jobs:
             evid=$(printf '%s\n' "$campos" | sed -n 's/^[[:space:]]*evidencia:[[:space:]]*//p' | head -n 1)
             suelta=$(printf '%s\n' "$campos" | grep -vE '^[[:space:]]*(comando|mide|evidencia):' | head -n 1 || true)
             if [ -z "$cmd" ] && [ -n "$suelta" ]; then
-              echo "APPARATUS_SIN_TIPO: declaración de un solo campo ('$suelta'). El contrato v5 exige 'comando:' + 'mide:' (y 'evidencia:' si mide es manifiesto o banco) — failing closed."
+              echo "APPARATUS_SIN_TIPO: declaración de un solo campo ('$suelta'). El contrato v6 exige 'comando:' + 'mide:' + 'evidencia:' (junitxml si mide=tests; regex si mide=manifiesto o banco) — failing closed."
               exit 1
             fi
             if [ -z "$cmd" ] || [ -z "$mide" ]; then
@@ -132,25 +288,48 @@ jobs:
             } >> "$GITHUB_ENV"
             echo "APPARATUS_DECLARED: $cmd"
             echo "APPARATUS_MIDE: $mide"
-          elif [ -n "$(find . \( -name 'test_*.py' -o -name '*_test.py' \) \
-                        -not -path './.git/*' -not -path '*/node_modules/*' \
-                        -not -path './.venv/*' -print -quit)" ]; then
-            echo "APPARATUS_DETECTED: pytest"
-            {
-              printf 'APPARATUS=%s\n' 'python -m pytest -q'
-              printf 'MIDE=tests\n'
-              printf 'EVIDENCIA=\n'
-              printf 'ORIGEN=detectado\n'
-            } >> "$GITHUB_ENV"
           else
-            echo "NO_APPARATUS_DECLARED: no .github/ci-apparatus and no test_*.py / *_test.py — failing closed."
+            echo "NO_APPARATUS_DECLARED: no .github/ci-apparatus — failing closed (v8 retiró la detección: un repo con test_*.py también declara su aparato)."
             exit 1
           fi
 
-      - name: Validar la declaración (v5 — eval en línea prohibido y tipo declarado)
+      # HUELLA-CI-PY-V9-NOMBRE-PASO-20261020
+      - name: Validar la declaración (v11 — eval en línea, operadores de enmascarado y constructos prohibidos, modo(s) y evidencia(s))
         run: |
           set -euo pipefail
+          modos_decl=$(printf '%s' "$MIDE" | tr '+' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' || true)
+          tiene_modo() { printf '%s\n' "$modos_decl" | grep -qx "$1"; }
+          tiene_ev()   { printf '%s' "$EVIDENCIA" | tr ';' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -qx "$1"; }
+          EV_REGEX=$(printf '%s' "$EVIDENCIA" | tr ';' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | grep -vx 'junitxml' | paste -sd';' - || true)
           case "$MIDE" in
+            *+*)
+              if [ -z "$modos_decl" ]; then
+                echo "APPARATUS_MIDE: modo compuesto vacío en 'mide: $MIDE' — failing closed."
+                exit 1
+              fi
+              if tiene_modo binario; then
+                echo "MIDE_NO_IMPLEMENTADO: 'mide: binario' está reservado y no implementado; un tipo sin implementación no puede firmar verde — failing closed."
+                exit 1
+              fi
+              suelto=$(printf '%s\n' "$modos_decl" | grep -vxE 'tests|sintaxis|manifiesto|banco' | head -n 1 || true)
+              if [ -n "$suelto" ]; then
+                echo "APPARATUS_TIPO_DESCONOCIDO: 'mide: $suelto' fuera del vocabulario (tests | sintaxis | manifiesto | banco) — failing closed."
+                exit 1
+              fi
+              if tiene_modo manifiesto && tiene_modo banco; then
+                echo "APPARATUS_MIDE: 'manifiesto+banco' es ambiguo (dos veredictos textuales en un solo aparato: el certificado no puede atribuir cuál imprimió qué) — failing closed."
+                exit 1
+              fi
+              if tiene_modo tests && ! tiene_ev 'junitxml'; then
+                echo "EVIDENCIA_INCOMPLETA: junitxml — 'mide: $MIDE' declara tests y 'evidencia:' no trae el token junitxml (declara 'evidencia: <regex>; junitxml' y escribe /tmp/junit.xml con --junitxml=) — failing closed."
+                exit 1
+              fi
+              if (tiene_modo manifiesto || tiene_modo banco) && [ -z "$EV_REGEX" ]; then
+                echo "EVIDENCIA_INCOMPLETA: manifiesto — 'mide: $MIDE' declara un veredicto textual y 'evidencia:' no trae su regex (la que imprime el entero > 0) — failing closed."
+                exit 1
+              fi
+              echo "COMPUESTO_DECLARADO: modos=$(printf '%s' "$modos_decl" | paste -sd'+' -) · evidencia_textual=/${EV_REGEX:-—}/ · junitxml=$(tiene_ev 'junitxml' && echo si || echo no)"
+              ;;
             tests|sintaxis|manifiesto|banco) ;;
             binario)
               echo "MIDE_NO_IMPLEMENTADO: 'mide: binario' está reservado y no implementado; un tipo sin implementación no puede firmar verde — failing closed."
@@ -167,6 +346,61 @@ jobs:
             resto=$(printf '%s' "$resto" | cut -s -d' ' -f2-)
           fi
           base=${primer##*/}
+          # HUELLA-CI-PY-V11-CONSTRUCTOS — ( … ), $( … ), `…`, 'alias ', 'exec ' fuera de comillas
+          # esconden el operador a un nivel que el veto de operadores no lee.
+          fuera_comillas=$(printf '%s' "$APPARATUS" | awk '{
+            s = $0; n = length(s); q = ""; out = ""
+            for (i = 1; i <= n; i++) {
+              c = substr(s, i, 1)
+              if (q == "") {
+                if (c == "\047" || c == "\"") { q = c; continue }
+                out = out c
+              } else if (c == q) { q = "" }
+            }
+            printf "%s", out
+          }')
+          if printf '%s' "$fuera_comillas" | grep -qF '$('; then
+            echo "CONSTRUCTO_PROHIBIDO: '\$(' en 'comando:' — la sustitución de comandos evalúa un programa que el veto no lee; el aparato no puede llevar su veredicto dentro de una expansión — failing closed."
+            exit 1
+          fi
+          if printf '%s' "$fuera_comillas" | grep -qF '`'; then
+            echo "CONSTRUCTO_PROHIBIDO: '\`' en 'comando:' — la sustitución con retroceso evalúa un programa que el veto no lee — failing closed."
+            exit 1
+          fi
+          if printf '%s' "$fuera_comillas" | grep -qF '('; then
+            echo "CONSTRUCTO_PROHIBIDO: '(' en 'comando:' — un subshell esconde sus operadores del veto (el '||' de dentro no se ve); si hace falta agrupar, la lógica va en un script versionado y el aparato lo invoca — failing closed."
+            exit 1
+          fi
+          if printf '%s' "$fuera_comillas" | grep -qF ')'; then
+            echo "CONSTRUCTO_PROHIBIDO: ')' en 'comando:' — un subshell esconde sus operadores del veto (el '||' de dentro no se ve); si hace falta agrupar, la lógica va en un script versionado y el aparato lo invoca — failing closed."
+            exit 1
+          fi
+          if printf '%s' "$fuera_comillas" | grep -qE '(^|[^[:alnum:]_])alias[[:space:]]'; then
+            echo "CONSTRUCTO_PROHIBIDO: 'alias ' en 'comando:' — el alias se expande DESPUÉS del veto: el operador vive en la definición y el validador solo ve el nombre — failing closed."
+            exit 1
+          fi
+          if printf '%s' "$fuera_comillas" | grep -qE '(^|[^[:alnum:]_])exec[[:space:]]'; then
+            echo "CONSTRUCTO_PROHIBIDO: 'exec ' en 'comando:' — 'exec' sustituye el shell del step: el rc que se lee deja de ser el del aparato — failing closed."
+            exit 1
+          fi
+          sin_conj=$(printf '%s' "$APPARATUS" | sed 's/&&//g')
+          if printf '%s' "$sin_conj" | grep -q ';'; then
+            echo "APPARATUS_INVALIDO: ';' en 'comando:' — el separador corta la propagación del exit code (lo de después corre aunque lo de antes falle). Encadena con '&&' si el segundo paso solo vale con el primero en verde — failing closed."
+            exit 1
+          fi
+          if printf '%s' "$sin_conj" | grep -q '|'; then
+            echo "APPARATUS_INVALIDO: '|' en 'comando:' — la tubería devuelve el exit code del último comando (y '||' el de la salida alternativa), así que enmascara el fallo del chequeador; dentro de 'bash -c' no hay pipefail que lo salve — failing closed."
+            exit 1
+          fi
+          if printf '%s' "$sin_conj" | grep -q '&'; then
+            echo "APPARATUS_INVALIDO: '&' en 'comando:' — el aparato pasa a segundo plano y el exit code que se lee es el del shell, no el suyo — failing closed."
+            exit 1
+          fi
+          if printf '%s' "$APPARATUS" | grep -qE '(^|[^[:alnum:]_])set[[:space:]]+[+]'; then
+            echo "APPARATUS_INVALIDO: 'set +…' en 'comando:' desactiva la propagación de errores dentro del aparato (set +e / set +o errexit) — failing closed."
+            exit 1
+          fi
+          echo "OPERADORES_OK: sin ';' · '|' · '&' · 'set +…'; la conjunción '&&' se acepta (propaga el fallo)."
           case "$base" in
             true|false|:|echo|printf|exit)
               echo "APPARATUS_VACUO: '$APPARATUS' no mide nada — failing closed."
@@ -190,7 +424,7 @@ jobs:
               fi ;;
           esac
 
-          if [ "$MIDE" = "sintaxis" ]; then
+          if tiene_modo sintaxis; then
             chequeador=$base
             case "$base" in
               python|python3|pypy|pypy3)
@@ -209,54 +443,83 @@ jobs:
             echo "SINTAXIS_DECLARADA: chequeador '$chequeador'."
           fi
 
-          if [ "$MIDE" = "manifiesto" ] || [ "$MIDE" = "banco" ]; then
-            if [ -z "$EVIDENCIA" ]; then
+          if tiene_modo manifiesto || tiene_modo banco; then
+            if [ -z "$EV_REGEX" ]; then
               echo "APPARATUS_SIN_EVIDENCIA: mide=$MIDE exige 'evidencia:' (el regex que el verificador imprime al medir); sin ella un rc 0 no distingue medir de no medir — failing closed."
               exit 1
             fi
-            echo "EVIDENCIA_DECLARADA: /$EVIDENCIA/"
+            echo "EVIDENCIA_DECLARADA: /$EV_REGEX/"
           fi
-          echo "DECLARACION_OK: mide=$MIDE · $APPARATUS"
 
-      - name: Guarda de vacuidad (un aparato declarado se juzga por su evidencia)
-        run: |
-          set -euo pipefail
-          if [ "$ORIGEN" != "detectado" ]; then
-            echo "VACUIDAD_DELEGADA: aparato declarado; la evidencia la exigen 'Validar la declaración' y 'Correr el aparato' según mide=$MIDE."
-            exit 0
-          fi
-          found=$(find . \( -name .git -o -name node_modules -o -name .venv -o -name __pycache__ \) -prune -o \
-                    -type f \( -name 'test_*.py' -o -name '*_test.py' \) -print -quit)
-          if [ -z "$found" ]; then
-            echo "NO_TESTS_FOUND: pytest detectado por nombre pero el repo no tiene archivos test_*.py / *_test.py — failing closed."
+          if tiene_modo tests && ! tiene_ev junitxml; then
+            echo "APPARATUS_INCOMPATIBLE: mide=$MIDE exige 'evidencia: junitxml' y que 'comando:' escriba /tmp/junit.xml con --junitxml=...; contar el texto del runner no es contrato (tres falsos rojos medidos: sangría de mocha, glifo de node 24, decorado '===== N passed =====' de pytest) — failing closed."
             exit 1
           fi
-          echo "VACUIDAD_OK: pytest + archivo de test '$found'."
+          if tiene_ev junitxml && ! tiene_modo tests; then
+            echo "APPARATUS_INCOMPATIBLE: 'evidencia: junitxml' solo vale si 'mide:' declara tests; mide=$MIDE exige el regex literal que imprime su verificador — failing closed."
+            exit 1
+          fi
+          echo "DECLARACION_OK: mide=$MIDE · $APPARATUS · evidencia=${EVIDENCIA:-—}"
 
-      - name: Instalar dependencias (falla cerrado)
+      - name: Guarda de vacuidad (v8 — un aparato se juzga por su evidencia)
+        run: |
+          set -euo pipefail
+          echo "VACUIDAD_DELEGADA: aparato declarado (ORIGEN=$ORIGEN); la evidencia la exigen 'Validar la declaración' y 'Correr el aparato' según mide=$MIDE."
+
+      - name: Instalar dependencias (v10 — el runner no instala lo que el repo no declara)
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip > /dev/null
-          python -m pip install pytest
+          declara=0
+          spec=""
           if [ -f requirements.txt ]; then
+            if grep -qiE '^[[:space:]]*pytest([<>=!~;[:space:]]|$)' requirements.txt; then declara=1; fi
             python -m pip install -r requirements.txt
           elif [ -f pyproject.toml ]; then
+            spec=$(grep -vE '^[[:space:]]*#' pyproject.toml | grep -oiE '"(pytest[<>=!~][^"]*|pytest)"' | head -1 | tr -d '"' || true)
+            if [ -n "$spec" ]; then declara=1; fi
             python -m pip install -e .
           else
-            echo "SIN_MANIFIESTO: no requirements.txt ni pyproject.toml — pytest pelado."
+            echo "SIN_MANIFIESTO: no requirements.txt ni pyproject.toml."
+          fi
+          if printf '%s' "$APPARATUS" | grep -qE '(^|[^[:alnum:]_-])pytest([^[:alnum:]_-]|$)'; then
+            if [ "$declara" -ne 1 ]; then
+              echo "DEPENDENCIA_NO_DECLARADA: el aparato invoca pytest y ningun manifiesto lo declara (requirements.txt activo o pyproject.toml) — el runner ya no instala pytest a ciegas; failing closed."
+              exit 1
+            fi
+            if ! python -c 'import pytest' > /dev/null 2>&1; then
+              if [ -n "$spec" ]; then
+                python -m pip install "$spec"
+                echo "PYTEST_DESDE_EXTRAS: instalado '$spec' (declarado en pyproject.toml; 'pip install -e .' no instala extras)."
+              else
+                echo "PYTEST_NO_IMPORTABLE: declarado en requirements.txt pero no importable tras -r — failing closed."
+                exit 1
+              fi
+            fi
+            echo "DEPENDENCIA_OK: invoca pytest · declara=1"
+          else
+            echo "DEPENDENCIA_OK: el aparato no invoca pytest; solo se instala el manifiesto."
           fi
 
-      - name: Correr el aparato (v5 — rc, evidencia por tipo y conteo de tests)
+      - name: Correr el aparato (v7 — rc, evidencia por modo e instrumento junitxml)
         run: |
           set -euo pipefail
+          modos_decl=$(printf '%s' "$MIDE" | tr '+' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' || true)
+          tiene_modo() { printf '%s\n' "$modos_decl" | grep -qx "$1"; }
+          tiene_ev()   { printf '%s' "$EVIDENCIA" | tr ';' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -qx "$1"; }
+          EV_REGEX=$(printf '%s' "$EVIDENCIA" | tr ';' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | grep -vx 'junitxml' | paste -sd';' - || true)
+          compuesto=0
+          case "$MIDE" in *+*) compuesto=1 ;; esac
           echo "RUN_APPARATUS: $APPARATUS"
+          rm -f /tmp/junit.xml
+          inicio=$(date +%s)
           log=$(mktemp)
           set +e
           bash -c "$APPARATUS" 2>&1 | tee "$log"
           rc=${PIPESTATUS[0]}
           set -e
           echo "APPARATUS_RC=$rc"
-          if [ "$MIDE" = "tests" ] && [ "$rc" -eq 5 ]; then
+          if tiene_modo tests && [ "$rc" -eq 5 ]; then
             echo "NO_TESTS_COLLECTED: pytest no recogió ningún test (rc 5) — failing closed."
             exit 1
           fi
@@ -264,89 +527,100 @@ jobs:
             exit "$rc"
           fi
 
-          if [ "$MIDE" = "sintaxis" ]; then
-            if [ -n "$EVIDENCIA" ] && ! grep -qE "$EVIDENCIA" "$log"; then
-              echo "VACUIDAD_EVIDENCIA: mide=sintaxis con rc 0 pero la evidencia declarada /$EVIDENCIA/ no aparece en la salida — failing closed."
+          if tiene_modo sintaxis; then
+            if [ -n "$EV_REGEX" ] && ! grep -qE "$EV_REGEX" "$log"; then
+              echo "VACUIDAD_EVIDENCIA: mide=$MIDE con rc 0 pero la evidencia declarada /$EV_REGEX/ no aparece en la salida — failing closed."
               exit 1
             fi
             msg="SINTAXIS_OK: rc 0 del chequeador '$APPARATUS'"
-            if [ -n "$EVIDENCIA" ]; then msg="$msg · evidencia /$EVIDENCIA/"; fi
+            if [ -n "$EV_REGEX" ]; then msg="$msg · evidencia /$EV_REGEX/"; fi
             echo "$msg"
-            exit 0
+            if [ "$compuesto" -eq 0 ]; then exit 0; fi
           fi
 
-          if [ "$MIDE" = "manifiesto" ] || [ "$MIDE" = "banco" ]; then
-            etq=$(printf '%s' "$MIDE" | tr '[:lower:]' '[:upper:]')
-            if ! grep -qE "$EVIDENCIA" "$log"; then
-              echo "VACUIDAD_${etq}: la evidencia declarada /$EVIDENCIA/ no aparece en la salida; un rc 0 sin veredicto no es una medida — failing closed."
+          if tiene_modo manifiesto || tiene_modo banco; then
+            if tiene_modo manifiesto; then etq=MANIFIESTO; else etq=BANCO; fi
+            if ! grep -qE "$EV_REGEX" "$log"; then
+              echo "VACUIDAD_${etq}: la evidencia declarada /$EV_REGEX/ no aparece en la salida; un rc 0 sin veredicto no es una medida — failing closed."
               exit 1
             fi
-            if ! grep -E "$EVIDENCIA" "$log" | grep -qE '[1-9]'; then
-              echo "VACUIDAD_${etq}: la evidencia /$EVIDENCIA/ no trae ningún entero > 0; un veredicto sobre 0 elementos no mide nada — failing closed."
+            if ! grep -E "$EV_REGEX" "$log" | grep -qE '[1-9]'; then
+              echo "VACUIDAD_${etq}: la evidencia /$EV_REGEX/ no trae ningún entero > 0; un veredicto sobre 0 elementos no mide nada — failing closed."
               exit 1
             fi
-            echo "${etq}_OK: evidencia /$EVIDENCIA/ presente y con conteo."
-            exit 0
+            echo "${etq}_OK: evidencia /$EV_REGEX/ presente y con conteo."
+            if [ "$compuesto" -eq 0 ]; then exit 0; fi
+          fi
+
+          if ! tiene_modo tests; then
+            echo "APPARATUS_MIDE: mide=$MIDE no declara ningún modo verificable por este paso — failing closed."
+            exit 1
           fi
 
           set +e
-          python3 - "$log" <<'PY'
-          import re, sys
+          python3 - "$inicio" <<'PY'
+          import os, sys
+          import xml.etree.ElementTree as ET
 
-          txt = open(sys.argv[1], encoding='utf-8', errors='replace').read()
+          RUTA = '/tmp/junit.xml'
+          inicio = int(sys.argv[1]) if len(sys.argv) > 1 else 0
 
-          # Contadores POSITIVOS por familia de runner. Cada patrón captura un entero.
-          # El ancla `^[^A-Za-z0-9]*` acepta la decoración de cada runner: sangría de
-          # mocha, glifo «ℹ» de node --test y la línea `==== N passed ====` de pytest
-          # sin -q. Sin ella el instrumento se vuelve más frágil que el objeto medido.
-          positivos = [
-              r'^\s*(?:\u2139\s*|#\s*)?pass\s+(\d+)\s*$',   # node --test spec «ℹ pass N» / TAP «# pass N»
-              r'^\s*Ran\s+(\d+)\s+tests?\s+in',        # unittest
-              r'^\s*Tests?:\s*(\d+)\s+passed',         # jest
-              r'^\s*Tests\s+(\d+)\s+passed',           # vitest
-              r'^[^A-Za-z0-9]*(\d+)\s+passed',         # pytest «N passed in …» (con o sin -q)
-              r'^[^A-Za-z0-9]*(\d+)\s+passing',        # mocha «  N passing»
-              r'^[^A-Za-z0-9]*(\d+)\s+tests?\s+passed',  # bun / genérico
-              r'^\s*ok\s+\d+',                         # TAP: una línea ok = un test
-          ]
-          # Contadores NEGATIVOS explícitos: si el runner DICE cero, es rojo aunque
-          # otra línea parezca positiva.
-          negativos = [
-              r'^\s*(?:\u2139\s*|#\s*)?pass\s+0\s*$',
-              r'^\s*Ran\s+0\s+tests?\s+in',
-              r'^\s*Tests?:\s*0\s+passed',
-              r'^\s*Tests\s+0\s+passed',
-              r'^[^A-Za-z0-9]*0\s+passed',
-              r'^[^A-Za-z0-9]*0\s+passing',
-              r'^[^A-Za-z0-9]*0\s+tests?\s+passed',
-              r'no\s+tests?\s+ran',
-          ]
+          def local(tag):
+              return tag.rsplit('}', 1)[-1]
 
-          cuenta = 0
-          for p in positivos:
-              if p == r'^\s*ok\s+\d+':
-                  cuenta = max(cuenta, len(re.findall(p, txt, re.M)))
-              else:
-                  for m in re.findall(p, txt, re.M):
-                      try:
-                          cuenta = max(cuenta, int(m))
-                      except ValueError:
-                          pass
-
-          cero_explicito = any(re.search(p, txt, re.M) for p in negativos)
-
-          if cero_explicito:
-              print("VACUIDAD_EJECUCION: el runner declaró 0 tests ejecutados — failing closed.")
+          if not os.path.exists(RUTA):
+              print("NO_JUNITXML: mide=tests y el aparato no generó /tmp/junit.xml "
+                    "(declara --junitxml=/tmp/junit.xml dentro de 'comando:') — failing closed.")
               sys.exit(1)
-          if cuenta < 1:
-              print("VACUIDAD_EJECUCION: la salida no reporta ningún test ejecutado "
-                    "(se buscaron formatos de pytest, unittest, node --test, jest, vitest, mocha, bun y TAP) — failing closed.")
+
+          mtime = int(os.path.getmtime(RUTA))
+          if inicio and mtime < inicio - 1:
+              print(f"JUNIT_VIEJO: /tmp/junit.xml es anterior a esta corrida "
+                    f"(mtime {mtime} < inicio {inicio}); ese informe no lo produjo el aparato — failing closed.")
               sys.exit(1)
-          print(f"EJECUCION_OK: {cuenta} test(s) reportados por el runner.")
+
+          try:
+              raiz = ET.parse(RUTA).getroot()
+          except Exception as e:
+              print(f"JUNIT_INVALIDO: /tmp/junit.xml no parsea ({e}) — failing closed.")
+              sys.exit(1)
+
+          casos = [e for e in raiz.iter() if local(e.tag) == 'testcase']
+          if not casos:
+              print("NO_TESTS: el informe no tiene ningún elemento <testcase>; "
+                    "un informe sin casos no mide nada — failing closed.")
+              sys.exit(1)
+
+          fallos = errores = omitidos = 0
+          for c in casos:
+              hijos = {local(h.tag) for h in c}
+              if 'failure' in hijos:
+                  fallos += 1
+              if 'error' in hijos:
+                  errores += 1
+              if 'skipped' in hijos:
+                  omitidos += 1
+
+          if fallos or errores:
+              print(f"TESTS_FAILED: {fallos} fallo(s) y {errores} error(es) en {len(casos)} casos "
+                    f"según el informe; el informe manda sobre el rc — failing closed.")
+              sys.exit(1)
+
+          medidos = len(casos) - omitidos
+          if medidos < 1:
+              print(f"VACUIDAD_SKIP: los {len(casos)} casos del informe están omitidos; "
+                    f"un verde de casos que no corrieron es un falso verde — failing closed.")
+              sys.exit(1)
+
+          print(f"EJECUCION_OK: {medidos} test(s) ejecutados de {len(casos)} casos · "
+                f"{fallos} fallos · {errores} errores · {omitidos} omitidos (junitxml).")
           PY
           rc2=$?
           set -e
           if [ "$rc2" -ne 0 ]; then
             echo "EJECUCION_RC=$rc2"
             exit "$rc2"
+          fi
+          if [ "$compuesto" -eq 1 ]; then
+            echo "COMPUESTO_OK: $(printf '%s' "$modos_decl" | paste -sd'+' -) verificados — el certificado cubre TODAS las evidencias declaradas."
           fi
