@@ -100,7 +100,7 @@ HUELLA = "HUELLA-CANALES-V5-20261019"
 # Corte publico: arbol PLANO. El catalogo y el banco de casos NO se distribuyen:
 # se leen de donde el usuario los ponga (variable de entorno o archivo local).
 RAIZ = os.path.dirname(os.path.abspath(__file__))
-RUTA_INDICE = os.environ.get("INDICE_SOLUCIONES", os.path.join(RAIZ, "INDICE_SOLUCIONES.json"))
+RUTA_INDICE = os.environ.get("ROUTER_INDICE", os.path.join(RAIZ, "catalogo.json"))
 RUTA_EVAL = os.environ.get("EVAL_CASOS", os.path.join(RAIZ, "EVAL_casos.json"))
 if RAIZ not in sys.path:
     sys.path.insert(0, RAIZ)

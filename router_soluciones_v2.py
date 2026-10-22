@@ -24,7 +24,7 @@ propio catalogo) y se declara en la salida para que cada corrida sea auditable.
 Uso:
     python3 router_soluciones_v2.py --indice catalogo.json "el problema"
     python3 router_soluciones_v2.py --indice catalogo.json --json "..."
-    INDICE_SOLUCIONES=catalogo.json python3 router_soluciones_v2.py "..."
+    ROUTER_INDICE=catalogo.json python3 router_soluciones_v2.py "..."
 
 Formato del indice: {"soluciones": [{"id": ..., "problema": ..., "solucion": ...,
 "dominio": ..., "cuando_aplicar": ...}, ...]}
@@ -42,7 +42,7 @@ import time
 HUELLA = "HUELLA-ROUTER-V2-CORTE-PUBLICO-20261020"
 UMBRAL = float(os.environ.get("ROUTER_UMBRAL", "0.07"))
 RAIZ = os.path.dirname(os.path.abspath(__file__))
-RUTA_INDICE = os.environ.get("INDICE_SOLUCIONES", os.path.join(RAIZ, "INDICE_SOLUCIONES.json"))
+RUTA_INDICE = os.environ.get("ROUTER_INDICE", os.path.join(RAIZ, "catalogo.json"))
 
 # Texto de comparacion: los MISMOS cuatro campos de la V1.
 CAMPOS_TEXTO = ("problema", "solucion", "dominio", "cuando_aplicar")

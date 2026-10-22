@@ -6,6 +6,6 @@ dist/
 build/
 *.egg-info/
 .pytest_cache/
-INDICE_SOLUCIONES.json
+catalogo.json
 EVAL_casos.json
 .DS_Store

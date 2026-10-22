@@ -48,10 +48,12 @@ Este repositorio es el **corte público** de un motor que corre en producción:
   identificadores de solución, ni el barrido contra la versión anterior del motor. Ese
   material es del operador privado; aquí el catálogo **lo pone el usuario**.
 
-Por eso el índice y el banco de evaluación se leen de `INDICE_SOLUCIONES` y
-`EVAL_CASOS`, o de los argumentos explícitos. El umbral se lee de `ROUTER_UMBRAL`
-(por defecto `0.07`): el valor calibrado lo es contra un corpus concreto, y cada corpus
-trae el suyo. Se imprime en cada salida para que la corrida sea auditable.
+Por eso el índice y el banco de evaluación se leen de `ROUTER_INDICE` y
+`EVAL_CASOS`, o de los argumentos explícitos. Actualiza la configuración de despliegue
+para usar `ROUTER_INDICE`; el archivo por defecto es `catalogo.json`. El umbral se lee
+de `ROUTER_UMBRAL` (por defecto `0.07`): el valor calibrado lo es contra un corpus
+concreto, y cada corpus trae el suyo. Se imprime en cada salida para que la corrida sea
+auditable.
 
 ## Formato del índice
 
