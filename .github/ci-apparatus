@@ -1,6 +1,8 @@
 # HUELLA-CI-PYTHON-V5-PROHIBICION-EVAL-20261020
-# Contrato v5: comando: + mide: (+ evidencia: si mide es manifiesto o banco).
-# La plantilla de este repo ya no firma verde con un comando que no mide.
-comando: python .github/verify_manifest.py
-mide: manifiesto
-evidencia: MANIFIESTO_SANO: [0-9]+
+# Contrato v11: 'comando:' + 'mide:' + 'evidencia:' (junitxml si mide=tests).
+# Nivel 6: el aparato mide contencion dura de canales sobre el motor real,
+# ya no la existencia del manifiesto.
+comando: python3 -m pytest tests/test_contencion_dura_ast.py --junitxml=/tmp/junit.xml
+mide: tests
+evidencia: junitxml
+# HUELLA-CI-APPARATUS-AST-NV6-20261022
