@@ -19,7 +19,7 @@ gane sin que la prosa tenga que desaparecer.
 
 | archivo | qué hace |
 |---|---|
-| `ingesta_ast_20261019.py` | recorre un paquete con `ast` y extrae símbolos, llamadas, excepciones y rutas por documento |
+| `ingesta_ast_20261019.py` | recorre un paquete con `ast` y extrae símbolos, llamadas, excepciones y rutas por documento, más las aristas de importación del corpus |
 | `canales_v5_20261019.py` | puntúa una consulta por canal y suma con pesos; expone `puntuar(evidencia, documento)` |
 | `extractor_ast.py` | extrae la evidencia dura de una consulta (símbolos, excepciones, rutas) usando los mismos canales |
 | `router_soluciones_v2.py` | núcleo de enrutamiento: Jaccard con filtro de stopwords |
@@ -39,6 +39,43 @@ python3 canales_v5_20261019.py "AttributeError: 'NoneType' object has no attribu
 # 3) enrutar contra un catálogo propio
 python3 router_soluciones_v2.py --indice examples/indice_ejemplo.json "el cargador revienta con None"
 ```
+
+## Grafo de importaciones (`imports`)
+
+La ingesta emite las aristas de importación **a nivel de corpus**, al lado de
+`nodos`, no como campo de cada nodo. Salida real de `--paquete _pytest --json`,
+recortada a dos aristas:
+
+```json
+{"n_imports": 1686, "n_imports_cond": 117,
+ "imports": [
+   {"rel": "_io/terminalwriter.py", "linea": 80, "qual": "TerminalWriter.__init__",
+    "modulo": "colorama", "nombre": null, "asname": null,
+    "cond": "if hasattr(file, 'isatty') and file.isatty() and (sys.platform == 'win32') / except ImportError"},
+   {"rel": "__init__.py", "linea": 7, "qual": null,
+    "modulo": "._version", "nombre": "version", "asname": "__version__",
+    "cond": "except ImportError"}
+ ]}
+```
+
+- `qual` — la declaración que encierra la arista, o `null` a nivel módulo.
+- `cond` — la guarda que la hace condicional, o `null` si no hay guarda. Se
+  compone con ` / ` de fuera hacia dentro: `if <test>` (el test tal como lo
+  escribe `ast.unparse`) y `except <tipos>`.
+- `modulo` / `nombre` / `asname` — `import a.b` deja `modulo="a.b"`,
+  `nombre=null`; `from a.b import c as d` deja `modulo="a.b"`, `nombre="c"`,
+  `asname="d"`. Los puntos relativos se preservan (`.`, `..paquete`).
+- `n_imports` y `n_imports_cond` son el denominador: el descarte se publica.
+
+La primera arista del ejemplo es el patrón que se busca: un `import` dentro de
+una declaración, bajo una guarda de plataforma **y** un `except ImportError`
+anidado. Existe en el corpus real (`_pytest`, no en el árbol de esta
+herramienta) y por eso el campo lo publica en vez de descartarlo.
+
+**Por qué a nivel de corpus y no por nodo.** Medido el 26-Oct-2026 sobre el
+corpus declarado: de 5 657 imports, **5 150 (91%) viven a nivel módulo** y no
+tienen nodo al que colgarse; 56 de los condicionales están en ese estrato. Un
+campo por nodo habría publicado el 9% del objeto y dejado el resto invisible.
 
 ## Qué se distribuye y qué no
 
@@ -81,7 +118,11 @@ solo actor por medición.
 - No mide si la solución es correcta: mide si la evidencia dura está en la consulta y si
   el documento la conserva.
 - `calls` guarda el nombre tal como aparece (`yaml.error.X` se guarda como `X` y como
-  `yaml.error.X`). No hay inferencia de tipos ni resolución de imports.
+  `yaml.error.X`). No hay inferencia de tipos.
+- `imports` publica la arista `A importa B`; **no** resuelve la dependencia: no dice si
+  `B` se puede importar en este intérprete ni arrastra transitivas. La guarda se lee del
+  cuerpo de `if` y de `try`; un import en `else`/`finally`/`except` se publica con
+  `cond: null`.
 - Para lenguajes que no son Python se declara `soportado: False` en vez de inventar
   símbolos con una regex que se haría pasar por AST.
 
@@ -90,3 +131,9 @@ solo actor por medición.
 MIT. Ver `LICENSE`.
 
 <!-- HUELLA-README-INGESTA-SITE-RC-20261025 -->
+
+<!-- HUELLA-README-IMPORTS-20261026 -->
+
+<!-- HUELLA-README-IMPORTS-B-20261026 -->
+
+<!-- HUELLA-README-IMPORTS-C-20261026 -->

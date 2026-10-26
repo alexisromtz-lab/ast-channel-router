@@ -23,6 +23,15 @@ QUE HACE
   El grafo de simbolos es la lista de aristas `nodo -> callee` y
   `nodo -> excepcion`; el banco de consultas del eval se DERIVA de las aristas
   `raises`, no de prosa escrita a mano.
+  El grafo de importaciones se emite como arista del corpus (`imports`), no
+  como campo del nodo: medido 26-Oct-2026 sobre el corpus declarado, 5 150 de
+  5 657 imports (91%) viven a nivel modulo y no tienen nodo al que colgarse, y
+  56 de los condicionales estan en ese estrato. Un campo por nodo publicaria
+  el 9% del objeto. Cada arista lleva `qual` (la declaracion que la encierra,
+  o None a nivel modulo), `cond` (la guarda `if <test>` o `except <tipos>` que
+  la hace condicional, o None) y la terna `modulo`/`nombre`/`asname`. `n_imports`
+  y `n_imports_cond` publican el denominador, para que el descarte sea un numero
+  medido y no un silencio.
   El paquete no se busca en una ruta clavada: se pregunta a `importlib` donde
   vive el paquete QUE CORRE EN ESTE INTERPRETE (`resolver_raiz`). Si el nombre
   no resuelve, la causa se nombra (`AUSENTE` · `NO_ES_PAQUETE` ·
@@ -37,6 +46,12 @@ POR QUE ES DETERMINISTA
 QUE NO HACE
   No resuelve imports: `calls` es el nombre tal como aparece (`yaml.error.X`
   se guarda como `X` y como `yaml.error.X`). No hay inferencia de tipos.
+  La guarda de una arista de import se lee del cuerpo de `if` y de `try` (y de
+  `try*` cuando el interprete lo tiene: en 3.10 un `except*` no parsea, asi que
+  no hay nada que medir); un import en `else`/`finally`/`except` se publica con
+  `cond: None` (tambien se ejecuta condicionalmente, pero no por la guarda que
+  aqui se mide), y no hay transitividad: la arista dice que A importa B, no si
+  B se puede importar.
   Para lenguajes que no son Python no hay AST aqui: se declara `soportado:
   False` en vez de inventar simbolos con una regex que se haria pasar por AST.
   No adivina rutas de instalacion: resuelve contra `sys.path` del interprete
@@ -113,7 +128,11 @@ def _segmento(lineas, nodo):
 
 # HUELLA-INGESTA-AST-BLOQUES-20261025
 # HUELLA-INGESTA-AST-ILEGIBLES-20261025
+# HUELLA-INGESTA-AST-IMPORTS-20261026
+# HUELLA-INGESTA-AST-TRYSTAR-20261026
 DECLARABLES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+# `try*` existe desde 3.11 y el corte publico declara >=3.8: se nombra sin romper 3.10.
+TIPOS_TRY = (ast.Try, ast.TryStar) if hasattr(ast, "TryStar") else (ast.Try,)
 
 
 def _declaraciones(nodo):
@@ -144,6 +163,56 @@ def _walk_propio(nodo):
         for hijo in ast.iter_child_nodes(actual):
             if not isinstance(hijo, DECLARABLES):
                 pila.append(hijo)
+
+
+def _padres(arbol):
+    """Mapa hijo -> (padre, campo) para poder subir la cadena de guardas."""
+    mapa = {}
+    for nodo in ast.walk(arbol):
+        for campo, valor in ast.iter_fields(nodo):
+            if isinstance(valor, list):
+                for h in valor:
+                    if isinstance(h, ast.AST):
+                        mapa[h] = (nodo, campo)
+            elif isinstance(valor, ast.AST):
+                mapa[valor] = (nodo, campo)
+    return mapa
+
+
+def _aristas_import(arbol, rel):
+    """Aristas de importacion del archivo, con `qual` y la guarda que las condiciona."""
+    padres = _padres(arbol)
+    aristas = []
+    for nodo in ast.walk(arbol):
+        if not isinstance(nodo, (ast.Import, ast.ImportFrom)):
+            continue
+        qual, guardas = None, []
+        actual = nodo
+        while actual in padres:
+            padre, campo = padres[actual]
+            if isinstance(padre, DECLARABLES) and campo == "body":
+                qual = padre.name if qual is None else padre.name + "." + qual
+            elif isinstance(padre, ast.If) and campo == "body":
+                guardas.append("if " + ast.unparse(padre.test))
+            elif isinstance(padre, TIPOS_TRY) and campo == "body":
+                tipos = sorted({ast.unparse(h.type) for h in padre.handlers
+                                if h.type is not None})
+                if tipos:
+                    guardas.append("except " + "/".join(tipos))
+            actual = padre
+        cond = " / ".join(reversed(guardas)) or None
+        if isinstance(nodo, ast.Import):
+            for a in nodo.names:
+                aristas.append({"rel": rel, "qual": qual, "modulo": a.name,
+                                "nombre": None, "asname": a.asname,
+                                "cond": cond, "linea": nodo.lineno})
+        else:
+            modulo = "." * getattr(nodo, "level", 0) + (nodo.module or "")
+            for a in nodo.names:
+                aristas.append({"rel": rel, "qual": qual, "modulo": modulo,
+                                "nombre": a.name, "asname": a.asname,
+                                "cond": cond, "linea": nodo.lineno})
+    return aristas
 
 
 def _recorrer(nodo, prefijo, rel, lineas, salida):
@@ -188,7 +257,7 @@ def ingerir_paquete(paquete, base=None):
     raiz, _ = resolver_raiz(paquete, base)
     if raiz is None:
         return None
-    archivos, nodos, ilegibles = [], [], []
+    archivos, nodos, ilegibles, imports = [], [], [], []
     for r, dirs, ficheros in os.walk(raiz):
         dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d != "__pycache__")
         for nombre in sorted(ficheros):
@@ -214,11 +283,15 @@ def ingerir_paquete(paquete, base=None):
             antes = len(nodos)
             _recorrer(arbol, "", rel, lineas, nodos)
             archivos[-1]["nodos"] = len(nodos) - antes
+            imports.extend(_aristas_import(arbol, rel))
     nodos.sort(key=lambda n: (n["rel"], n["linea"], n["qual"]))
+    imports.sort(key=lambda a: (a["rel"], a["linea"], a["modulo"], a["nombre"] or ""))
     return {"esquema": "ingesta_ast/v1", "huella": HUELLA, "paquete": paquete,
             "raiz": os.path.relpath(raiz, RAIZ), "n_archivos": len(archivos),
             "n_ilegibles": len(ilegibles), "ilegibles": ilegibles,
-            "n_nodos": len(nodos), "archivos": archivos, "nodos": nodos}
+            "n_nodos": len(nodos), "n_imports": len(imports),
+            "n_imports_cond": sum(1 for a in imports if a["cond"]),
+            "archivos": archivos, "nodos": nodos, "imports": imports}
 
 
 def canales_de_nodo(nodo):
@@ -293,6 +366,8 @@ def main(argv=None):
     print("ARISTAS nodo->callee=%d  nodo->excepcion=%d"
           % (sum(len(n["calls"]) for n in corpus["nodos"]),
              sum(len(n["raises"]) for n in corpus["nodos"])))
+    print("IMPORTS total=%d condicionales=%d"
+          % (corpus["n_imports"], corpus["n_imports_cond"]))
     for n in con_raise[:5]:
         print("  %-52s raises=%s" % (clave_de_nodo(n),
                                      ",".join(sorted({r["exc"] for r in n["raises"]}))))
