@@ -186,4 +186,7 @@ El censo histórico de 5,657/5,150 (commit `340abce`) se declara `NO_REPRODUCIBL
 
 <!-- HUELLA-LIMITE-AST-DINAMICO-20261026 -->
 La ingesta AST no puede resolver dependencias creadas dinámicamente (por ejemplo, mediante `__getattr__` o `globals()`). El esquema v2 publica `puntos_ciegos` por archivo para señalar patrones observables, pero no resuelve sus destinos. Para diagnosticar fallos de resolución dinámica sigue siendo necesario el traceback del entorno de ejecución.
+
+El detalle de ese fallo **sí** se conserva si se cruza la frontera por acceso a atributo en vez de `from ... import`: medido el 26-Oct-2026 en 3.12.13, `getattr(mod, "x")` deja el `AttributeError` con su marco y su mensaje, mientras que `from mod import x` lo sustituye por `ImportError: cannot import name ...` sin `__cause__` ni `__context__`. El borrado es de la frontera de importación, no de PEP 562.
+<!-- HUELLA-README-FRONTERA-IMPORT-20261026 -->
 <!-- HUELLA-LIMITE-AST-DINAMICO-20261026 -->
