@@ -32,6 +32,11 @@ QUE HACE
   la hace condicional, o None) y la terna `modulo`/`nombre`/`asname`. `n_imports`
   y `n_imports_cond` publican el denominador, para que el descarte sea un numero
   medido y no un silencio.
+  Cada entrada de `archivos` publica `puntos_ciegos`: señales sintacticas para
+  `__getattr__` de modulo, `importlib.import_module` y `globals()[...]`. Un
+  archivo parseado sin esos patrones lleva `[]`; uno ilegible lleva `None`.
+  Son indicadores de posible resolucion dinamica, no destinos resueltos ni un
+  veredicto de comportamiento en runtime.
   El paquete no se busca en una ruta clavada: se pregunta a `importlib` donde
   vive el paquete QUE CORRE EN ESTE INTERPRETE (`resolver_raiz`). Si el nombre
   no resuelve, la causa se nombra (`AUSENTE` · `NO_ES_PAQUETE` ·
@@ -44,8 +49,10 @@ POR QUE ES DETERMINISTA
   el eval lo verifica comparando dos corridas.
 
 QUE NO HACE
-  No resuelve imports: `calls` es el nombre tal como aparece (`yaml.error.X`
-  se guarda como `X` y como `yaml.error.X`). No hay inferencia de tipos.
+  No resuelve imports ni atributos dinamicos: `puntos_ciegos` solo declara
+  patrones observables en el AST; no afirma a que modulo o simbolo apuntan.
+  `calls` es el nombre tal como aparece (`yaml.error.X` se guarda como `X` y
+  como `yaml.error.X`). No hay inferencia de tipos.
   La guarda de una arista de import se lee del cuerpo de `if` y de `try` (y de
   `try*` cuando el interprete lo tiene: en 3.10 un `except*` no parsea, asi que
   no hay nada que medir); un import en `else`/`finally`/`except` se publica con
@@ -262,6 +269,58 @@ def _aristas_import(arbol, rel):
     return aristas
 
 
+# HUELLA-INGESTA-AST-PUNTOS-CIEGOS-20261026
+def _puntos_ciegos(arbol):
+    """Marca patrones dinamicos visibles sin inferir su destino en runtime."""
+    puntos = set()
+    alias_importlib = {"importlib"}
+    alias_import_module = set()
+
+    for nodo in ast.walk(arbol):
+        if isinstance(nodo, ast.Import):
+            for alias in nodo.names:
+                if alias.name == "importlib" or (
+                    alias.name.startswith("importlib.") and alias.asname is None
+                ):
+                    alias_importlib.add(alias.asname or "importlib")
+        elif isinstance(nodo, ast.ImportFrom) and nodo.module == "importlib":
+            for alias in nodo.names:
+                if alias.name == "import_module":
+                    alias_import_module.add(alias.asname or alias.name)
+
+    if any(
+        isinstance(nodo, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and nodo.name == "__getattr__"
+        for nodo in _declaraciones(arbol)
+    ):
+        puntos.add("__getattr__")
+
+    for nodo in ast.walk(arbol):
+        if isinstance(nodo, ast.Call):
+            funcion = nodo.func
+            if (
+                isinstance(funcion, ast.Attribute)
+                and funcion.attr == "import_module"
+                and isinstance(funcion.value, ast.Name)
+                and funcion.value.id in alias_importlib
+            ) or (
+                isinstance(funcion, ast.Name)
+                and funcion.id in alias_import_module
+            ):
+                puntos.add("importlib.import_module")
+        elif isinstance(nodo, ast.Subscript):
+            valor = nodo.value
+            if (
+                isinstance(valor, ast.Call)
+                and isinstance(valor.func, ast.Name)
+                and valor.func.id == "globals"
+            ):
+                puntos.add("globals()[...]")
+
+    orden = ("__getattr__", "importlib.import_module", "globals()[...]")
+    return [punto for punto in orden if punto in puntos]
+
+
 def _recorrer(nodo, prefijo, rel, lineas, salida):
     for hijo in _declaraciones(nodo):
         if isinstance(hijo, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
@@ -316,7 +375,7 @@ def ingerir_paquete(paquete, base=None):
                 datos = f.read()
             archivos.append({"rel": rel,
                              "sha256": hashlib.sha256(datos).hexdigest(),
-                             "bytes": len(datos)})
+                             "bytes": len(datos), "puntos_ciegos": None})
             texto = datos.decode("utf-8", "replace")
             try:
                 arbol = ast.parse(texto)
@@ -326,6 +385,7 @@ def ingerir_paquete(paquete, base=None):
                 ilegibles.append({"rel": rel, "linea": e.lineno,
                                   "motivo": str(e.msg)[:120]})
                 continue
+            archivos[-1]["puntos_ciegos"] = _puntos_ciegos(arbol)
             lineas = texto.splitlines()
             antes = len(nodos)
             _recorrer(arbol, "", rel, lineas, nodos)
@@ -333,7 +393,7 @@ def ingerir_paquete(paquete, base=None):
             imports.extend(_aristas_import(arbol, rel))
     nodos.sort(key=lambda n: (n["rel"], n["linea"], n["qual"]))
     imports.sort(key=lambda a: (a["rel"], a["linea"], a["modulo"], a["nombre"] or ""))
-    return {"esquema": "ingesta_ast/v1", "huella": HUELLA, "paquete": paquete,
+    return {"esquema": "ingesta_ast/v2", "huella": HUELLA, "paquete": paquete,
             "raiz": os.path.relpath(raiz, RAIZ), "n_archivos": len(archivos),
             "n_ilegibles": len(ilegibles), "ilegibles": ilegibles,
             "n_nodos": len(nodos), "n_imports": len(imports),

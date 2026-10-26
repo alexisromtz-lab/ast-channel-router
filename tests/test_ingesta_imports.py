@@ -4,6 +4,7 @@
 # HUELLA-TEST-INGESTA-MODALIDAD-20261026
 # HUELLA-TEST-INGESTA-IMPACTO-20261026
 # HUELLA-TEST-INGESTA-MODALIDAD-FIX-20261026
+# HUELLA-TEST-INGESTA-PUNTOS-CIEGOS-20261026
 """Banco must-fail del grafo de importaciones.
 
 El defecto medido: el corpus no tenia NINGUNA arista de importacion — el
@@ -146,6 +147,33 @@ def test_archivo_ilegible_no_aporta_aristas_y_se_declara(tmp_path):
     assert corpus["ilegibles"][0]["rel"] == "roto.py"
     assert all(a["rel"] == "__init__.py" for a in aristas)
     assert [a["modulo"] for a in aristas] == ["os"]
+    archivos = {a["rel"]: a for a in corpus["archivos"]}
+    assert archivos["__init__.py"]["puntos_ciegos"] == []
+    assert archivos["roto.py"]["puntos_ciegos"] is None
+
+
+# HUELLA-TEST-INGESTA-PUNTOS-CIEGOS-CASOS-20261026
+def test_puntos_ciegos_dinamicos_se_declaran_por_archivo(tmp_path):
+    codigo = (
+        "import importlib as il\n"
+        "from importlib import import_module as cargar\n"
+        "if True:\n"
+        "    def __getattr__(nombre):\n"
+        "        return il.import_module(nombre)\n"
+        "def por_nombre(nombre):\n"
+        "    cargar(nombre)\n"
+        "    return globals()[nombre]\n"
+    )
+    nombre = _paquete(
+        tmp_path, "dinamico_20261026", __init__=codigo, limpio="valor = 1\n"
+    )
+    corpus = ING.ingerir_paquete(nombre, base=str(tmp_path))
+    archivos = {a["rel"]: a for a in corpus["archivos"]}
+    assert corpus["esquema"] == "ingesta_ast/v2"
+    assert archivos["__init__.py"]["puntos_ciegos"] == [
+        "__getattr__", "importlib.import_module", "globals()[...]"
+    ]
+    assert archivos["limpio.py"]["puntos_ciegos"] == []
 
 
 def test_imports_es_determinista(tmp_path):
