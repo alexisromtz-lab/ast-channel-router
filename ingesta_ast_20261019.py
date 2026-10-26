@@ -13,6 +13,9 @@ QUE HACE
     catches    excepciones atrapadas (canal `excepciones`)
     calls      callees resueltos por nombre (arista del grafo de simbolos)
     doc, seg   docstring y fuente del nodo (canal `prosa`)
+  Las declaraciones anidadas en un bloque (`if`/`try`/`for`/`while`/`with`) se
+  ingieren igual que las del cuerpo del modulo, y cada nodo acredita solo sus
+  propios canales: no hereda los `raise`/`call` de una def interna.
   El grafo de simbolos es la lista de aristas `nodo -> callee` y
   `nodo -> excepcion`; el banco de consultas del eval se DERIVA de las aristas
   `raises`, no de prosa escrita a mano.
@@ -69,15 +72,49 @@ def _segmento(lineas, nodo):
     return "\n".join(lineas[ini:fin])
 
 
+# HUELLA-INGESTA-AST-BLOQUES-20261025
+DECLARABLES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+
+
+def _declaraciones(nodo):
+    """Defs y clases de cualquier bloque (if/try/for/while/with), sin entrar en ellos.
+
+    `nodo.body` solo expone los hijos directos: un `def` bajo un
+    `if sys.platform == ...` o bajo un `try/except` de respaldo desaparecia sin
+    dejar rastro (medido 25-Oct-2026: 3 de 3 perdidas). Aqui se desciende por
+    los bloques y se corta en cada declaracion, que se recorre por su rama.
+    """
+    for hijo in ast.iter_child_nodes(nodo):
+        if isinstance(hijo, DECLARABLES):
+            yield hijo
+        else:
+            yield from _declaraciones(hijo)
+
+
+def _walk_propio(nodo):
+    """Descendientes de `nodo` sin cruzar el limite de una declaracion anidada.
+
+    `ast.walk` entra en las defs internas y acredita sus `raise`/`call` tambien
+    al nodo externo: la misma excepcion contaba dos veces (medido 25-Oct-2026).
+    """
+    pila = [nodo]
+    while pila:
+        actual = pila.pop()
+        yield actual
+        for hijo in ast.iter_child_nodes(actual):
+            if not isinstance(hijo, DECLARABLES):
+                pila.append(hijo)
+
+
 def _recorrer(nodo, prefijo, rel, lineas, salida):
-    for hijo in getattr(nodo, "body", []):
+    for hijo in _declaraciones(nodo):
         if isinstance(hijo, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             qual = prefijo + hijo.name
             if isinstance(hijo, ast.ClassDef):
                 _recorrer(hijo, qual + ".", rel, lineas, salida)
                 continue
             raises, catches, calls = [], [], set()
-            for m in ast.walk(hijo):
+            for m in _walk_propio(hijo):
                 if isinstance(m, ast.Raise) and m.exc is not None:
                     nombre = _nombre_exc(m.exc)
                     if nombre:
