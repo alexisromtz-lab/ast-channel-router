@@ -172,3 +172,8 @@ uv run --no-project --python 3.12.13 --with 'pytest==9.1.1' -- python ingesta_as
 ```
 
 <!-- HUELLA-ERRATA-ORIGEN-ARISTAS-20261026 -->
+
+<!-- HUELLA-ERRATA-CENSO-ARISTAS-20261026 -->
+El censo histórico de 5,657 imports citado arriba se originó en `340abce`; su mensaje registra 954 archivos `.py` y 952 parseados, pero no identifica el paquete, la ruta del corpus ni el comando. Es una medición histórica distinta de la línea base `_pytest` reproducida aquí; su locus queda pendiente y no deben compararse como el mismo universo.
+
+<!-- HUELLA-ERRATA-CENSO-ARISTAS-20261026 -->
