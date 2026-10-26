@@ -16,6 +16,10 @@ QUE HACE
   Las declaraciones anidadas en un bloque (`if`/`try`/`for`/`while`/`with`) se
   ingieren igual que las del cuerpo del modulo, y cada nodo acredita solo sus
   propios canales: no hereda los `raise`/`call` de una def interna.
+  Un archivo que no parsea NO se suprime: `n_archivos` cuenta el disco, el
+  archivo queda en `archivos` con `nodos: None` e `ilegible: SyntaxError`, y
+  se publica en `n_ilegibles` / `ilegibles` con linea y motivo. Asi el
+  descarte es un numero medido y no un silencio.
   El grafo de simbolos es la lista de aristas `nodo -> callee` y
   `nodo -> excepcion`; el banco de consultas del eval se DERIVA de las aristas
   `raises`, no de prosa escrita a mano.
@@ -73,6 +77,7 @@ def _segmento(lineas, nodo):
 
 
 # HUELLA-INGESTA-AST-BLOQUES-20261025
+# HUELLA-INGESTA-AST-ILEGIBLES-20261025
 DECLARABLES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 
 
@@ -148,7 +153,7 @@ def ingerir_paquete(paquete, base=SITE):
     raiz = os.path.join(base, paquete)
     if not os.path.isdir(raiz):
         return None
-    archivos, nodos = [], []
+    archivos, nodos, ilegibles = [], [], []
     for r, dirs, ficheros in os.walk(raiz):
         dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d != "__pycache__")
         for nombre in sorted(ficheros):
@@ -161,17 +166,23 @@ def ingerir_paquete(paquete, base=SITE):
             archivos.append({"rel": rel,
                              "sha256": hashlib.sha256(datos).hexdigest(),
                              "bytes": len(datos)})
+            texto = datos.decode("utf-8", "replace")
             try:
-                arbol = ast.parse(datos.decode("utf-8", "replace"))
-            except SyntaxError:
+                arbol = ast.parse(texto)
+            except SyntaxError as e:
+                archivos[-1]["nodos"] = None
+                archivos[-1]["ilegible"] = "SyntaxError"
+                ilegibles.append({"rel": rel, "linea": e.lineno,
+                                  "motivo": str(e.msg)[:120]})
                 continue
-            lineas = datos.decode("utf-8", "replace").splitlines()
+            lineas = texto.splitlines()
             antes = len(nodos)
             _recorrer(arbol, "", rel, lineas, nodos)
             archivos[-1]["nodos"] = len(nodos) - antes
     nodos.sort(key=lambda n: (n["rel"], n["linea"], n["qual"]))
     return {"esquema": "ingesta_ast/v1", "huella": HUELLA, "paquete": paquete,
             "raiz": os.path.relpath(raiz, RAIZ), "n_archivos": len(archivos),
+            "n_ilegibles": len(ilegibles), "ilegibles": ilegibles,
             "n_nodos": len(nodos), "archivos": archivos, "nodos": nodos}
 
 
@@ -230,9 +241,10 @@ def main(argv=None):
         print(json.dumps(corpus, ensure_ascii=False, indent=1, sort_keys=True))
         return 0
     con_raise = [n for n in corpus["nodos"] if n["raises"]]
-    print("PAQUETE %s  archivos=%d nodos=%d con_raise=%d raise_sites=%d"
+    print("PAQUETE %s  archivos=%d nodos=%d ilegibles=%d con_raise=%d raise_sites=%d"
           % (corpus["paquete"], corpus["n_archivos"], corpus["n_nodos"],
-             len(con_raise), sum(len(n["raises"]) for n in con_raise)))
+             corpus["n_ilegibles"], len(con_raise),
+             sum(len(n["raises"]) for n in con_raise)))
     print("ARISTAS nodo->callee=%d  nodo->excepcion=%d"
           % (sum(len(n["calls"]) for n in corpus["nodos"]),
              sum(len(n["raises"]) for n in corpus["nodos"])))
