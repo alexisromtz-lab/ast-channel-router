@@ -157,3 +157,18 @@ MIT. Ver `LICENSE`.
 <!-- HUELLA-README-IMPORTS-B-20261026 -->
 
 <!-- HUELLA-README-IMPORTS-C-20261026 -->
+
+<!-- HUELLA-ERRATA-ORIGEN-ARISTAS-20261026 -->
+## Adenda de procedencia de aristas — 2026-10-26
+
+`git log --all -S '658'` y `git log --all -S '707'` no identifican commits de origen en este repositorio. Se retiran los conteos `658/39/8/2` y el total `707`: no tienen locus reproducible y no deben atribuirse a `_pytest`.
+
+Línea base reproducida para el módulo `_pytest`, provisto por la distribución `pytest==9.1.1`, con Python 3.12.13 seleccionado por `uv`: **1,686 aristas** — `requerida`: 1,569; `type_checking`: 68; `runtime_data`: 43; `except_import`: 6.
+
+Comando de reproducción:
+
+```bash
+uv run --no-project --python 3.12.13 --with 'pytest==9.1.1' -- python ingesta_ast_20261019.py --paquete _pytest --json | jq -c '{paquete,n_imports,modalidades:([.imports[].modalidad] | group_by(.) | map({(.[0]):length}) | add)}'
+```
+
+<!-- HUELLA-ERRATA-ORIGEN-ARISTAS-20261026 -->
