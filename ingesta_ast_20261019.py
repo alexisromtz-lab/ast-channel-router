@@ -130,6 +130,7 @@ def _segmento(lineas, nodo):
 # HUELLA-INGESTA-AST-ILEGIBLES-20261025
 # HUELLA-INGESTA-AST-IMPORTS-20261026
 # HUELLA-INGESTA-AST-TRYSTAR-20261026
+# HUELLA-INGESTA-AST-MODALIDAD-20261026
 DECLARABLES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 # `try*` existe desde 3.11 y el corte publico declara >=3.8: se nombra sin romper 3.10.
 TIPOS_TRY = (ast.Try, ast.TryStar) if hasattr(ast, "TryStar") else (ast.Try,)
@@ -179,9 +180,44 @@ def _padres(arbol):
     return mapa
 
 
+def _aliases_type_checking(arbol):
+    nombres, modulos = set(), set()
+    for nodo in ast.walk(arbol):
+        if isinstance(nodo, ast.ImportFrom) and nodo.module in (
+                "typing", "typing_extensions"):
+            nombres.update(a.asname or a.name for a in nodo.names
+                           if a.name == "TYPE_CHECKING")
+        elif isinstance(nodo, ast.Import):
+            modulos.update(a.asname or a.name.split(".", 1)[0]
+                           for a in nodo.names
+                           if a.name in ("typing", "typing_extensions"))
+    return nombres, modulos
+
+
+def _es_type_checking(test, nombres, modulos):
+    if isinstance(test, ast.Name):
+        return test.id in nombres
+    return (isinstance(test, ast.Attribute)
+            and test.attr == "TYPE_CHECKING"
+            and isinstance(test.value, ast.Name)
+            and test.value.id in modulos)
+
+
+def _modalidad_import(guardas):
+    if any(tipo == "type_checking" for tipo, _ in guardas):
+        return "type_checking"
+    if any(tipo == "if" for tipo, _ in guardas):
+        return "runtime_data"
+    if any(tipo == "except_import" for tipo, _ in guardas):
+        return "except_import"
+    return "runtime_data" if guardas else "requerida"
+
+
+# HUELLA-INGESTA-AST-MODALIDAD-IMPL-20261026
 def _aristas_import(arbol, rel):
-    """Aristas de importacion del archivo, con `qual` y la guarda que las condiciona."""
+    """Aristas de importacion con declaracion, guarda y modalidad."""
     padres = _padres(arbol)
+    nombres_tc, modulos_tc = _aliases_type_checking(arbol)
     aristas = []
     for nodo in ast.walk(arbol):
         if not isinstance(nodo, (ast.Import, ast.ImportFrom)):
@@ -193,25 +229,36 @@ def _aristas_import(arbol, rel):
             if isinstance(padre, DECLARABLES) and campo == "body":
                 qual = padre.name if qual is None else padre.name + "." + qual
             elif isinstance(padre, ast.If) and campo == "body":
-                guardas.append("if " + ast.unparse(padre.test))
+                texto = "if " + ast.unparse(padre.test)
+                tipo = ("type_checking" if _es_type_checking(
+                    padre.test, nombres_tc, modulos_tc) else "if")
+                guardas.append((tipo, texto))
             elif isinstance(padre, TIPOS_TRY) and campo == "body":
                 tipos = sorted({ast.unparse(h.type) for h in padre.handlers
                                 if h.type is not None})
                 if tipos:
-                    guardas.append("except " + "/".join(tipos))
+                    texto = "except " + "/".join(tipos)
+                    tipo = ("except_import" if any("ImportError" in t
+                                                   for t in tipos)
+                            else "except")
+                    guardas.append((tipo, texto))
             actual = padre
-        cond = " / ".join(reversed(guardas)) or None
+        guardas.reverse()
+        cond = " / ".join(texto for _, texto in guardas) or None
+        modalidad = _modalidad_import(guardas)
         if isinstance(nodo, ast.Import):
             for a in nodo.names:
                 aristas.append({"rel": rel, "qual": qual, "modulo": a.name,
                                 "nombre": None, "asname": a.asname,
-                                "cond": cond, "linea": nodo.lineno})
+                                "cond": cond, "modalidad": modalidad,
+                                "linea": nodo.lineno})
         else:
             modulo = "." * getattr(nodo, "level", 0) + (nodo.module or "")
             for a in nodo.names:
                 aristas.append({"rel": rel, "qual": qual, "modulo": modulo,
                                 "nombre": a.name, "asname": a.asname,
-                                "cond": cond, "linea": nodo.lineno})
+                                "cond": cond, "modalidad": modalidad,
+                                "linea": nodo.lineno})
     return aristas
 
 

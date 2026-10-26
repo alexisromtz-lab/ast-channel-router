@@ -51,10 +51,11 @@ recortada a dos aristas:
  "imports": [
    {"rel": "_io/terminalwriter.py", "linea": 80, "qual": "TerminalWriter.__init__",
     "modulo": "colorama", "nombre": null, "asname": null,
-    "cond": "if hasattr(file, 'isatty') and file.isatty() and (sys.platform == 'win32') / except ImportError"},
+    "cond": "if hasattr(file, 'isatty') and file.isatty() and (sys.platform == 'win32') / except ImportError",
+    "modalidad": "runtime_data"},
    {"rel": "__init__.py", "linea": 7, "qual": null,
     "modulo": "._version", "nombre": "version", "asname": "__version__",
-    "cond": "except ImportError"}
+    "cond": "except ImportError", "modalidad": "except_import"}
  ]}
 ```
 
@@ -62,10 +63,29 @@ recortada a dos aristas:
 - `cond` — la guarda que la hace condicional, o `null` si no hay guarda. Se
   compone con ` / ` de fuera hacia dentro: `if <test>` (el test tal como lo
   escribe `ast.unparse`) y `except <tipos>`.
+- `modalidad` — `requerida` (sin guarda), `type_checking` (guarda directa
+  `TYPE_CHECKING` importada de `typing`/`typing_extensions`), `except_import`
+  (import dentro de `try` con `ImportError`) o `runtime_data` (otras guardas).
+  `type_checking` se conserva en el JSON, pero no cuenta como impacto runtime.
+  `runtime_data` y `except_import` sí cuentan como impacto runtime posible; no
+  predicen si la rama se ejecutará ni si el paquete opcional estará instalado.
 - `modulo` / `nombre` / `asname` — `import a.b` deja `modulo="a.b"`,
   `nombre=null`; `from a.b import c as d` deja `modulo="a.b"`, `nombre="c"`,
   `asname="d"`. Los puntos relativos se preservan (`.`, `..paquete`).
 - `n_imports` y `n_imports_cond` son el denominador: el descarte se publica.
+
+# HUELLA-README-IMPACTO-CONSUMER-20261026
+El consumidor `extractor_ast.impacto_importaciones(corpus, objetivo)` devuelve
+los dependientes transitivos internos en `runtime` y los alcanzables solo al
+incluir aristas `type_checking` en `solo_type_checking`. `runtime` significa
+impacto posible: incluye imports bajo guardas de datos o `ImportError`, sin
+predecir la ejecución de esas ramas. La resolución cubre imports relativos y
+absolutos con prefijo del paquete; dependencias externas o no resueltas quedan
+fuera del resultado.
+
+```python
+impacto = extractor_ast.impacto_importaciones(corpus, "_io/terminalwriter.py")
+```
 
 La primera arista del ejemplo es el patrón que se busca: un `import` dentro de
 una declaración, bajo una guarda de plataforma **y** un `except ImportError`

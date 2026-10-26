@@ -1,6 +1,9 @@
 # HUELLA-TEST-INGESTA-IMPORTS-20261026
 # HUELLA-TEST-INGESTA-IMPORTS-DET-20261026
 # HUELLA-TEST-INGESTA-TRYSTAR-20261026
+# HUELLA-TEST-INGESTA-MODALIDAD-20261026
+# HUELLA-TEST-INGESTA-IMPACTO-20261026
+# HUELLA-TEST-INGESTA-MODALIDAD-FIX-20261026
 """Banco must-fail del grafo de importaciones.
 
 El defecto medido: el corpus no tenia NINGUNA arista de importacion — el
@@ -32,6 +35,7 @@ if str(RAIZ) not in sys.path:
     sys.path.insert(0, str(RAIZ))
 
 import ingesta_ast_20261019 as ING
+import extractor_ast as EXT
 
 
 def _paquete(tmp_path, nombre, **ficheros):
@@ -177,3 +181,39 @@ def test_import_bajo_except_estrella_lleva_cond(tmp_path):
     # `try*` no es `Try`: sin TIPOS_TRY la arista se publicaba sin guarda
     assert aristas[0]["cond"] == "except ImportError"
     assert corpus["n_imports_cond"] == 1
+
+
+# HUELLA-TEST-INGESTA-MODALIDAD-STRINGS-20261026
+def test_modalidad_presente_en_todas_las_aristas(tmp_path):
+    codigo = ('from typing import TYPE_CHECKING\n'
+              'if TYPE_CHECKING:\n'
+              '    import os\n'
+              'try:\n'
+              '    import colorama\n'
+              'except ImportError:\n'
+              '    colorama = None\n'
+              'import json\n')
+    nombre = _paquete(tmp_path, "modalidad_20261026", __init__=codigo)
+    _, aristas = _aristas(tmp_path, nombre)
+    modalidades = {a["modulo"]: a["modalidad"] for a in aristas}
+    assert set(modalidades.values()) <= {
+        "requerida", "type_checking", "runtime_data", "except_import"}
+    assert modalidades == {
+        "typing": "requerida", "os": "type_checking",
+        "colorama": "except_import", "json": "requerida"}
+
+
+def test_type_checking_no_cuenta_como_impacto_runtime(tmp_path):
+    paquete = "impacto_20261026"
+    nombre = _paquete(
+        tmp_path, paquete,
+        a=('from typing import TYPE_CHECKING\n'
+           'if TYPE_CHECKING:\n'
+           '    from . import b\n'),
+        b="VALUE = 1\n",
+        c=f"import {paquete}.a\n",
+    )
+    corpus, _ = _aristas(tmp_path, nombre)
+    impacto = EXT.impacto_importaciones(corpus, "b.py")
+    assert impacto["runtime"] == []
+    assert impacto["solo_type_checking"] == ["a.py", "c.py"]

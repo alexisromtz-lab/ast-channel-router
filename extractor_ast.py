@@ -137,6 +137,104 @@ def canales_de_fuente(codigo, rel=""):
     return acumulado, len(nodos)
 
 
+# HUELLA-EXTRACTOR-AST-IMPACTO-IMPORTS-20261026
+# HUELLA-EXTRACTOR-IMPACTO-REL-20261026
+def _modulos_del_corpus(corpus):
+    paquete = corpus.get("paquete")
+    if not isinstance(paquete, str) or not paquete:
+        raise ValueError("corpus sin nombre de paquete")
+    modulos = {}
+    for archivo in corpus.get("archivos", ()):
+        rel = archivo.get("rel")
+        if not isinstance(rel, str) or not rel.endswith(".py"):
+            continue
+        partes = rel[:-3].split("/")
+        if partes[-1] == "__init__":
+            partes.pop()
+        nombre = ".".join([paquete] + [p for p in partes if p])
+        modulos[nombre] = rel
+    return paquete, modulos
+
+
+def _destino_import(corpus, arista, paquete, modulos):
+    modulo = arista.get("modulo") or ""
+    rel = arista.get("rel") or ""
+    nombre = arista.get("nombre")
+    if modulo.startswith("."):
+        nivel = len(modulo) - len(modulo.lstrip("."))
+        resto = modulo[nivel:]
+        partes = rel[:-3].split("/")
+        if partes[-1] == "__init__":
+            partes.pop()
+        else:
+            partes.pop()
+        base = [paquete] + [p for p in partes if p]
+        if nivel > len(base):
+            return None
+        base = base[:len(base) - nivel + 1]
+        destino = ".".join(base + ([p for p in resto.split(".") if p]))
+    elif modulo == paquete or modulo.startswith(paquete + "."):
+        destino = modulo
+    else:
+        return None
+    candidatos = []
+    if nombre and nombre != "*":
+        candidatos.append(destino + "." + nombre)
+    candidatos.append(destino)
+    return next((modulos[c] for c in candidatos if c in modulos), None)
+
+
+def impacto_importaciones(corpus, objetivo):
+    """Devuelve dependientes transitivos runtime y solo type-checking.
+
+    `runtime` incluye guardas opcionales o dependientes de datos; no predice si
+    esas ramas se ejecutaran. Solo excluye imports marcados type_checking.
+    La resolucion se limita a modulos internos del paquete y a imports relativos.
+    """
+    if not isinstance(corpus, dict) or not isinstance(objetivo, str):
+        raise TypeError("se requiere un corpus y un objetivo relativo")
+    archivos = {a.get("rel") for a in corpus.get("archivos", ())
+                if isinstance(a, dict)}
+    if objetivo not in archivos:
+        raise ValueError("objetivo fuera del corpus: " + objetivo)
+    paquete, modulos = _modulos_del_corpus(corpus)
+    inverso = {}
+    inverso_todo = {}
+    for arista in corpus.get("imports", ()):
+        if not isinstance(arista, dict):
+            continue
+        origen = arista.get("rel")
+        destino = _destino_import(corpus, arista, paquete, modulos)
+        if origen not in archivos or destino is None:
+            continue
+        inverso_todo.setdefault(destino, set()).add(origen)
+        modalidad = arista.get("modalidad")
+        if modalidad is None:
+            cond = arista.get("cond") or ""
+            modalidad = ("type_checking" if "TYPE_CHECKING" in cond
+                         else "runtime_data" if cond.startswith("if ")
+                         else "except_import" if "except ImportError" in cond
+                         else "runtime_data" if cond else "requerida")
+        if modalidad != "type_checking":
+            inverso.setdefault(destino, set()).add(origen)
+
+    def dependientes(grafo):
+        vistos, pendientes = {objetivo}, [objetivo]
+        while pendientes:
+            actual = pendientes.pop()
+            for origen in grafo.get(actual, ()):
+                if origen not in vistos:
+                    vistos.add(origen)
+                    pendientes.append(origen)
+        vistos.discard(objetivo)
+        return vistos
+
+    todos = dependientes(inverso_todo)
+    runtime = dependientes(inverso)
+    return {"objetivo": objetivo, "runtime": sorted(runtime),
+            "solo_type_checking": sorted(todos - runtime)}
+
+
 def extraer_canales_ast(texto_o_codigo, rel="", forzar=None):
     """Punto de entrada unico: texto o codigo -> registro de canales JSON."""
     texto = texto_o_codigo or ""
