@@ -181,3 +181,9 @@ El censo histórico de 5,657 imports citado arriba se originó en `340abce`; su 
 <!-- HUELLA-ERRATA-CENSO-NO-REPRODUCIBLE-20261026 -->
 El censo histórico de 5,657/5,150 (commit `340abce`) se declara `NO_REPRODUCIBLE` por falta de locus (paquete y comando desconocidos). No se usará como base para auditorías.
 <!-- HUELLA-ERRATA-CENSO-NO-REPRODUCIBLE-20261026 -->
+
+## Límite de resolución dinámica
+
+<!-- HUELLA-LIMITE-AST-DINAMICO-20261026 -->
+La ingesta AST no puede resolver dependencias creadas dinámicamente (por ejemplo, mediante `__getattr__` o `globals()`). El esquema v2 publica `puntos_ciegos` por archivo para señalar patrones observables, pero no resuelve sus destinos. Para diagnosticar fallos de resolución dinámica sigue siendo necesario el traceback del entorno de ejecución.
+<!-- HUELLA-LIMITE-AST-DINAMICO-20261026 -->
