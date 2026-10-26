@@ -2,7 +2,11 @@
 # Contrato v11: 'comando:' + 'mide:' + 'evidencia:' (junitxml si mide=tests).
 # Nivel 6: el aparato mide contencion dura de canales sobre el motor real,
 # ya no la existencia del manifiesto.
-comando: python3 -m pytest tests/test_contencion_dura_ast.py --junitxml=/tmp/junit.xml
+comando: python3 -m pytest tests --junitxml=/tmp/junit.xml
 mide: tests
 evidencia: junitxml
 # HUELLA-CI-APPARATUS-AST-NV6-20261022
+# HUELLA-CI-APPARATUS-BANCOS-20261025: el comando corria UN archivo
+# (test_contencion_dura_ast.py) y los bancos must-fail de ingesta no se
+# ejecutaban nunca: el verde del aparato no medía el fix que decía ratificar.
+# Ahora corre el directorio entero; el banco nuevo entra sin tocar el aparato.

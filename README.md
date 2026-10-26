@@ -27,8 +27,11 @@ gane sin que la prosa tenga que desaparecer.
 ## Uso
 
 ```bash
-# 1) ingerir un paquete
+# 1) ingerir un paquete instalado en el intérprete activo
 python3 ingesta_ast_20261019.py --paquete yaml --json > documentos.json
+#    el paquete se resuelve con importlib, no por ruta clavada: si no está
+#    instalado, sale RC 2 (AUSENTE) en vez de un error de ruta. Con
+#    --site /ruta/site-packages se apunta a otra instalación.
 
 # 2) puntuar una consulta real
 python3 canales_v5_20261019.py "AttributeError: 'NoneType' object has no attribute 'get' en src/loader.py"
@@ -85,3 +88,5 @@ solo actor por medición.
 ## Licencia
 
 MIT. Ver `LICENSE`.
+
+<!-- HUELLA-README-INGESTA-SITE-RC-20261025 -->

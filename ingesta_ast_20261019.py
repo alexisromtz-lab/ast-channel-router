@@ -23,6 +23,11 @@ QUE HACE
   El grafo de simbolos es la lista de aristas `nodo -> callee` y
   `nodo -> excepcion`; el banco de consultas del eval se DERIVA de las aristas
   `raises`, no de prosa escrita a mano.
+  El paquete no se busca en una ruta clavada: se pregunta a `importlib` donde
+  vive el paquete QUE CORRE EN ESTE INTERPRETE (`resolver_raiz`). Si el nombre
+  no resuelve, la causa se nombra (`AUSENTE` · `NO_ES_PAQUETE` ·
+  `RUTA_EXPLICITA_AUSENTE`) y no se confunde con un paquete que si existe pero
+  no rinde nodos (`SIN_NODOS` · `SIN_NODOS_ILEGIBLES`). Cada causa tiene su RC.
 
 POR QUE ES DETERMINISTA
   Se recorre con os.walk ordenado, se ordena por (rel, linea, qual) y no se
@@ -34,16 +39,24 @@ QUE NO HACE
   se guarda como `X` y como `yaml.error.X`). No hay inferencia de tipos.
   Para lenguajes que no son Python no hay AST aqui: se declara `soportado:
   False` en vez de inventar simbolos con una regex que se haria pasar por AST.
+  No adivina rutas de instalacion: resuelve contra `sys.path` del interprete
+  que lo corre, asi que un paquete instalado en OTRO interprete no se ve (se
+  declara `AUSENTE`, no se busca a ciegas en el disco). Un modulo suelto (un
+  `.py`, no un paquete) no se puede recorrer: se declara `NO_ES_PAQUETE`.
 
 Uso:
-    python3 sim/ingesta_ast_20261019.py --paquete yaml
-    python3 sim/ingesta_ast_20261019.py --paquete yaml --json
-RC: 0 ok · 2 paquete ausente o sin nodos
+    python3 ingesta_ast_20261019.py --paquete json
+    python3 ingesta_ast_20261019.py --paquete json --json
+    python3 ingesta_ast_20261019.py --paquete _pytest --site /ruta/site-packages
+RC: 0 ok (publicando `n_ilegibles` cuando los hay)
+    2 paquete no ingerible (AUSENTE · NO_ES_PAQUETE · RUTA_EXPLICITA_AUSENTE)
+    3 paquete ingerible sin nodos (SIN_NODOS · SIN_NODOS_ILEGIBLES)
 """
 
 import argparse
 import ast
 import hashlib
+import importlib.util
 import json
 import os
 import sys
@@ -56,8 +69,30 @@ if RAIZ not in sys.path:
 
 import canales_v5_20261019 as CH  # noqa: E402  los canales, importados
 
-SITE = os.path.join(RAIZ, ".venv", "lib",
-                    "python%d.%d" % sys.version_info[:2], "site-packages")
+# HUELLA-INGESTA-AST-SITE-20261025
+def resolver_raiz(paquete, base=None):
+    """Directorio del paquete a ingerir, o (None, causa) si no lo hay.
+
+    `base` explicito conserva la semantica de ruta: la raiz es base/paquete.
+    Con base=None no se adivina ninguna ruta: se pregunta a `importlib` donde
+    vive el paquete en el interprete activo. Cada fallo se nombra en vez de
+    devolver un None mudo.
+    """
+    if base is not None:
+        raiz = os.path.join(base, paquete)
+        if not os.path.isdir(raiz):
+            return None, "RUTA_EXPLICITA_AUSENTE"
+        return raiz, None
+    try:
+        spec = importlib.util.find_spec(paquete)
+    except (ImportError, ValueError):
+        return None, "IMPORT_NO_RESUELVE"
+    if spec is None:
+        return None, "AUSENTE"
+    for loc in list(spec.submodule_search_locations or []):
+        if os.path.isdir(loc):
+            return loc, None
+    return None, "NO_ES_PAQUETE"
 
 
 def _nombre_exc(nodo):
@@ -149,9 +184,9 @@ def _recorrer(nodo, prefijo, rel, lineas, salida):
             _recorrer(hijo, qual + ".", rel, lineas, salida)
 
 
-def ingerir_paquete(paquete, base=SITE):
-    raiz = os.path.join(base, paquete)
-    if not os.path.isdir(raiz):
+def ingerir_paquete(paquete, base=None):
+    raiz, _ = resolver_raiz(paquete, base)
+    if raiz is None:
         return None
     archivos, nodos, ilegibles = [], [], []
     for r, dirs, ficheros in os.walk(raiz):
@@ -231,12 +266,22 @@ def clave_de_nodo(nodo):
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="ingesta_ast_20261019.py")
     ap.add_argument("--paquete", default="yaml")
+    ap.add_argument("--site", default=None,
+                    help="directorio que CONTIENE el paquete; por defecto se resuelve con importlib")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
-    corpus = ingerir_paquete(a.paquete)
-    if not corpus or not corpus["n_nodos"]:
-        print("ERROR: paquete ausente o sin nodos: %s" % a.paquete, file=sys.stderr)
+    corpus = ingerir_paquete(a.paquete, a.site)
+    if not corpus:
+        _, causa = resolver_raiz(a.paquete, a.site)
+        print("ERROR: paquete no ingerible (%s): %s"
+              % (causa or "DESAPARECIO_TRAS_RESOLVER", a.paquete), file=sys.stderr)
         return 2
+    if not corpus["n_nodos"]:
+        entero = bool(corpus["n_archivos"]) and corpus["n_ilegibles"] == corpus["n_archivos"]
+        print("ERROR: %s: %s  archivos=%d ilegibles=%d"
+              % ("SIN_NODOS_ILEGIBLES" if entero else "SIN_NODOS", a.paquete,
+                 corpus["n_archivos"], corpus["n_ilegibles"]), file=sys.stderr)
+        return 3
     if a.json:
         print(json.dumps(corpus, ensure_ascii=False, indent=1, sort_keys=True))
         return 0
