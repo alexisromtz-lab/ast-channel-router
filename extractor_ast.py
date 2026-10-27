@@ -140,12 +140,15 @@ def canales_de_fuente(codigo, rel=""):
 # HUELLA-EXTRACTOR-AST-IMPACTO-IMPORTS-20261026
 # HUELLA-EXTRACTOR-IMPACTO-REL-20261026
 # HUELLA-EXTRACTOR-LOCUS-RAIZ-20261026
+# HUELLA-EXTRACTOR-NS-N-RAICES-20261026
 def _locus_del_corpus(corpus):
-    """Locus unico del corpus; falla cerrado si concatena raices distintas.
+    """Locus primario del corpus; falla cerrado si mezcla raices sin declarar.
 
-    `rel` es unico dentro de una raiz y ambiguo entre raices. Un corpus que
-    junte dos raices —mismo `paquete`, mismos `rel`— no se resuelve adivinando:
-    se nombra el conflicto. Un corpus sin `locus` (esquema anterior) declara una
+    `rel` es unico dentro de una raiz y ambiguo entre raices. Un paquete de
+    namespace aporta varias raices legitimamente: el corpus las declara en
+    `raices_ingeridas` y cada archivo publica la suya. Cualquier `locus` fuera
+    de lo declarado —dos raices concatenadas a mano— se nombra en vez de
+    resolverse adivinando. Un corpus sin `locus` (esquema anterior) declara una
     sola raiz por construccion y devuelve None.
     """
     vistas = {}
@@ -158,13 +161,24 @@ def _locus_del_corpus(corpus):
         propio = archivo.get("locus")
         if isinstance(propio, str) and propio:
             vistas.setdefault(propio, archivo.get("rel"))
-    if len(vistas) > 1:
+    propias = set()
+    raices = corpus.get("raices_ingeridas")
+    if isinstance(raices, (list, tuple)):
+        for raiz in raices:
+            if isinstance(raiz, dict) and isinstance(raiz.get("locus"), str):
+                propias.add(raiz["locus"])
+    if isinstance(declarado, str) and declarado:
+        propias.add(declarado)
+    ajenas = {locus: rel for locus, rel in vistas.items() if locus not in propias}
+    if ajenas or (not propias and len(vistas) > 1):
         raise ValueError(
             "corpus fusiona raices distintas: "
             + " · ".join("%s:%s" % (locus[:16], rel)
-                         for locus, rel in sorted(vistas.items(),
+                         for locus, rel in sorted((ajenas or vistas).items(),
                                                   key=lambda x: str(x[0])))
         )
+    if isinstance(declarado, str) and declarado:
+        return declarado
     return next(iter(vistas), None)
 
 
@@ -173,6 +187,20 @@ def _modulos_del_corpus(corpus):
     paquete = corpus.get("paquete")
     if not isinstance(paquete, str) or not paquete:
         raise ValueError("corpus sin nombre de paquete")
+    loci_por_rel = {}
+    for archivo in corpus.get("archivos", ()):
+        if not isinstance(archivo, dict):
+            continue
+        rel, locus = archivo.get("rel"), archivo.get("locus")
+        if isinstance(rel, str) and isinstance(locus, str) and locus:
+            loci_por_rel.setdefault(rel, set()).add(locus)
+    ambiguos = {rel: loci for rel, loci in loci_por_rel.items() if len(loci) > 1}
+    if ambiguos:
+        raise ValueError(
+            "rel ambiguo entre raices: "
+            + " · ".join("%s:%s" % (rel, "/".join(sorted(l[:16] for l in loci)))
+                         for rel, loci in sorted(ambiguos.items()))
+        )
     modulos = {}
     for archivo in corpus.get("archivos", ()):
         rel = archivo.get("rel")

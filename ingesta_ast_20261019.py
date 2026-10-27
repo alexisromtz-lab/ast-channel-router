@@ -71,19 +71,23 @@ LOCUS DE RAIZ
   a la raiz ingerida y `locus` es el sha256 de la raiz ABSOLUTA resuelta con
   `realpath`. Dos paquetes homonimos en raices distintas —o dos copias del
   mismo paquete— publican el mismo `paquete` y los mismos `rel`; solo el
-  `locus` los distingue. El sobre publica `locus` una vez y cada entrada de
-  `archivos` lo repite, para que un corpus que concatene dos raices sea
-  detectable (el consumidor lo rechaza) en vez de silencioso. `raiz` es la
-  ruta absoluta resuelta; `raiz_rel` es la relativa al checkout de la
-  herramienta y es informativa: cambia si el corpus viaja a otra maquina. Un
-  corpus sin `locus` (esquema anterior) sigue siendo legible: la ausencia no es
-  ambigua porque ese corpus declara una sola raiz.
+  `locus` los distingue. El sobre publica el `locus` de la raiz primaria y cada
+  entrada de `archivos` repite el de SU raiz, para que un corpus que concatene
+  raices sin declararlas sea detectable (el consumidor lo rechaza) en vez de
+  silencioso. `raiz` es la ruta absoluta resuelta; `raiz_rel` es la relativa al
+  checkout de la herramienta y es informativa: cambia si el corpus viaja a otra
+  maquina. Un corpus sin `locus` (esquema anterior) sigue siendo legible: la
+  ausencia no es ambigua porque ese corpus declara una sola raiz.
 
-RAICES OMITIDAS
+RAICES DE NAMESPACE
   Un paquete de namespace puede vivir en varias entradas de `sys.path`. La
-  ingesta recorre la primera y declara el resto en `raices_omitidas`, con el
-  total en `raices_declaradas`. Un corpus con `raices_omitidas` no esta
-  completo: lo dice. Con `base` explicito las dos listas son la raiz pedida.
+  ingesta recorre TODAS las raices declaradas —cada una con su propio `locus`—
+  y las publica en `raices_ingeridas` (raiz, locus y n_archivos por raiz);
+  `raices_declaradas` conserva todas las rutas. `raices_omitidas` queda vacia
+  para un namespace bien formado: solo nombra una raiz declarada que dejo de
+  ser directorio entre la resolucion y el recorrido. Un `rel` presente en dos
+  raices no se resuelve adivinando: el consumidor falla cerrado con `rel
+  ambiguo entre raices`. Con `base` explicito hay una sola raiz.
 
 Uso:
     python3 ingesta_ast_20261019.py --paquete json
@@ -398,15 +402,15 @@ def _raices_declaradas(paquete):
             if os.path.isdir(loc)]
 
 
-def ingerir_paquete(paquete, base=None):
-    raiz, _ = resolver_raiz(paquete, base)
-    if raiz is None:
-        return None
-    raiz_abs = os.path.realpath(raiz)
-    locus = hashlib.sha256(raiz_abs.encode("utf-8")).hexdigest()
-    declaradas = _raices_declaradas(paquete) if base is None else [raiz_abs]
-    omitidas = [r for r in declaradas if r != raiz_abs]
-    archivos, nodos, ilegibles, imports = [], [], [], []
+# HUELLA-NS-RECORRE-N-RAICES-20261026
+def _ingerir_raiz(raiz, locus, archivos, nodos, ilegibles, imports):
+    """Recorre UNA raiz y acumula sus archivos, nodos e importaciones.
+
+    `rel` se mide contra la raiz recorrida y `locus` es el de esa raiz: la
+    identidad (locus, rel) no se hereda del sobre, porque un paquete de
+    namespace puede aportar varias raices al mismo corpus.
+    """
+    antes = len(archivos)
     for r, dirs, ficheros in os.walk(raiz):
         dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d != "__pycache__")
         for nombre in sorted(ficheros):
@@ -430,15 +434,36 @@ def ingerir_paquete(paquete, base=None):
                 continue
             archivos[-1]["puntos_ciegos"] = _puntos_ciegos(arbol)
             lineas = texto.splitlines()
-            antes = len(nodos)
+            antes_nodos = len(nodos)
             _recorrer(arbol, "", rel, lineas, nodos)
-            archivos[-1]["nodos"] = len(nodos) - antes
+            archivos[-1]["nodos"] = len(nodos) - antes_nodos
             imports.extend(_aristas_import(arbol, rel))
+    return len(archivos) - antes
+
+
+def ingerir_paquete(paquete, base=None):
+    raiz, _ = resolver_raiz(paquete, base)
+    if raiz is None:
+        return None
+    raiz_abs = os.path.realpath(raiz)
+    locus = hashlib.sha256(raiz_abs.encode("utf-8")).hexdigest()
+    declaradas = _raices_declaradas(paquete) if base is None else [raiz_abs]
+    ingeridas = [raiz_abs] + [r for r in declaradas
+                              if r != raiz_abs and os.path.isdir(r)]
+    omitidas = [r for r in declaradas if r not in ingeridas]
+    archivos, nodos, ilegibles, imports = [], [], [], []
+    raices = []
+    for raiz_i in ingeridas:
+        locus_i = hashlib.sha256(raiz_i.encode("utf-8")).hexdigest()
+        raices.append({"raiz": raiz_i, "locus": locus_i, "n_archivos":
+                       _ingerir_raiz(raiz_i, locus_i, archivos, nodos,
+                                     ilegibles, imports)})
     nodos.sort(key=lambda n: (n["rel"], n["linea"], n["qual"]))
     imports.sort(key=lambda a: (a["rel"], a["linea"], a["modulo"], a["nombre"] or ""))
     return {"esquema": "ingesta_ast/v2", "huella": HUELLA, "paquete": paquete,
             "raiz": raiz_abs, "raiz_rel": os.path.relpath(raiz, RAIZ),
             "locus": locus, "raices_declaradas": declaradas,
+            "raices_ingeridas": raices,
             "raices_omitidas": omitidas, "n_archivos": len(archivos),
             "n_ilegibles": len(ilegibles), "ilegibles": ilegibles,
             "n_nodos": len(nodos), "n_imports": len(imports),

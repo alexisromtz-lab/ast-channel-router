@@ -328,13 +328,15 @@ def test_corpus_sin_locus_sigue_siendo_legible(tmp_path):
     assert impacto["solo_type_checking"] == ["a.py", "c.py"]
 
 
-def test_namespace_declara_las_raices_omitidas(tmp_path, monkeypatch):
-    """Un paquete de namespace en dos rutas: se ingiere una y se declara la otra.
+# HUELLA-TEST-NS-N-RAICES-20261026
+def test_namespace_recorre_todas_las_raices(tmp_path, monkeypatch):
+    """Un paquete de namespace en dos rutas: se ingieren LAS DOS raices.
 
-    Medido el 26-Oct-2026 en 3.12.13: `find_spec` declaraba dos locations y la
-    ingesta recorria solo la primera, con `mod_b.py` desaparecido sin conteo.
-    La omision se sigue cometiendo —recorrer N raices es otro contrato— pero
-    ahora el corpus la nombra.
+    Medido el 26-Oct-2026 antes de este cambio: `find_spec` declaraba dos
+    locations, la ingesta recorria solo la primera y devolvia `n_archivos: 1`
+    con `mod_b.py` desaparecido. Cada raiz entra con su propio `locus`, la
+    superficie declara las N en `raices_ingeridas` y `raices_omitidas` queda
+    vacia: ya no hay omision que nombrar.
     """
     nombre = "nsprobe_20261026"
     for base in ("ns1", "ns2"):
@@ -347,11 +349,63 @@ def test_namespace_declara_las_raices_omitidas(tmp_path, monkeypatch):
     corpus = ING.ingerir_paquete(nombre)
     esperadas = [os.path.realpath(tmp_path / b / nombre) for b in ("ns1", "ns2")]
     assert corpus is not None
-    assert [a["rel"] for a in corpus["archivos"]] == ["mod_a.py"]
+    assert corpus["n_archivos"] == 2, "una de las dos raices se perdio"
+    assert sorted(a["rel"] for a in corpus["archivos"]) == ["mod_a.py", "mod_b.py"]
     assert corpus["raices_declaradas"] == esperadas
-    assert corpus["raices_omitidas"] == esperadas[1:]
-    assert corpus["locus"] == ING.hashlib.sha256(esperadas[0].encode("utf-8")).hexdigest()
+    assert corpus["raices_omitidas"] == []
+    assert [r["raiz"] for r in corpus["raices_ingeridas"]] == esperadas
+    assert [r["n_archivos"] for r in corpus["raices_ingeridas"]] == [1, 1]
+    por_raiz = {a["rel"]: a["locus"] for a in corpus["archivos"]}
+    assert len(set(por_raiz.values())) == 2, "las dos raices publicaron el mismo locus"
+    assert por_raiz["mod_a.py"] == ING.hashlib.sha256(
+        esperadas[0].encode("utf-8")).hexdigest()
+    assert corpus["locus"] == por_raiz["mod_a.py"], "el sobre publica la raiz primaria"
     con_base = ING.ingerir_paquete(nombre, base=str(tmp_path / "ns2"))
-    assert con_base["archivos"][0]["rel"] == "mod_b.py"
+    assert [a["rel"] for a in con_base["archivos"]] == ["mod_b.py"]
     assert con_base["raices_declaradas"] == [esperadas[1]]
     assert con_base["raices_omitidas"] == []
+
+
+def test_impacto_atraviesa_raices_de_namespace(tmp_path, monkeypatch):
+    """El consumidor acepta el corpus de N raices y resuelve entre ellas.
+
+    Sin la declaracion `raices_ingeridas` este corpus parece una fusion y el
+    guard lo rechaza; con ella, `mod_a` (raiz 1) depende de `mod_b` (raiz 2) y
+    el impacto lo dice. El nulo es el grafo vacio del objetivo sin aristas.
+    """
+    nombre = "nsimpacto_20261026"
+    for base in ("ns1", "ns2"):
+        (tmp_path / base / nombre).mkdir(parents=True)
+    (tmp_path / "ns1" / nombre / "mod_a.py").write_text(
+        "from %s import mod_b\nA = 1\n" % nombre, encoding="utf-8")
+    (tmp_path / "ns2" / nombre / "mod_b.py").write_text("B = 1\n", encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path / "ns2"))
+    monkeypatch.syspath_prepend(str(tmp_path / "ns1"))
+    importlib.invalidate_caches()
+    corpus = ING.ingerir_paquete(nombre)
+    impacto = EXT.impacto_importaciones(corpus, "mod_b.py")
+    assert impacto["runtime"] == ["mod_a.py"]
+    assert impacto["solo_type_checking"] == []
+    assert EXT.impacto_importaciones(corpus, "mod_a.py")["runtime"] == []
+
+
+def test_rel_repetido_entre_raices_falla_cerrado(tmp_path, monkeypatch):
+    """`mod.py` en las dos raices: se nombra el conflicto, no se adivina.
+
+    Python resolveria `paquete.mod` a la primera raiz de `sys.path`; el grafo
+    no puede decidir eso sin inventar, asi que el nodo ambiguo se rechaza.
+    """
+    nombre = "nsdup_20261026"
+    for base in ("ns1", "ns2"):
+        (tmp_path / base / nombre).mkdir(parents=True)
+        (tmp_path / base / nombre / "mod.py").write_text("V = 1\n", encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path / "ns2"))
+    monkeypatch.syspath_prepend(str(tmp_path / "ns1"))
+    importlib.invalidate_caches()
+    corpus = ING.ingerir_paquete(nombre)
+    assert corpus["n_archivos"] == 2
+    with pytest.raises(ValueError) as error:
+        EXT.impacto_importaciones(corpus, "mod.py")
+    assert "rel ambiguo entre raices" in str(error.value)
+    assert "mod.py" in str(error.value)
+

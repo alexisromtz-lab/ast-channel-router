@@ -77,23 +77,28 @@ recortada a dos aristas:
 <!-- HUELLA-README-LOCUS-RAIZ-20261026 -->
 **Locus de raíz.** La identidad de un archivo es el par `(locus, rel)`. `rel`
 es la ruta relativa a la raíz ingerida; `locus` es el `sha256` de la raíz
-**absoluta** resuelta con `realpath`, publicado una vez en el sobre y repetido
-en cada entrada de `archivos`. Sin él, dos paquetes homónimos en raíces
-distintas —o dos copias del mismo paquete— publican el mismo `paquete` y los
-mismos `rel`: son indistinguibles. `raiz` publica la ruta absoluta; `raiz_rel`
-es la relativa al checkout de la herramienta (informativa, cambia si el corpus
-viaja). Medido el 26-Oct-2026: un corpus que concatenara las dos raíces
-resolvía `mod.py` de A con `usador.py` de B y devolvía un dependiente que no
-existe; hoy `extractor_ast` lo rechaza con `corpus fusiona raices distintas`.
+**absoluta** resuelta con `realpath`, publicado en el sobre para la raíz
+primaria y repetido en cada entrada de `archivos` con el de **su** raíz. Sin
+él, dos paquetes homónimos en raíces distintas —o dos copias del mismo
+paquete— publican el mismo `paquete` y los mismos `rel`: son indistinguibles.
+`raiz` publica la ruta absoluta; `raiz_rel` es la relativa al checkout de la
+herramienta (informativa, cambia si el corpus viaja). Medido el 26-Oct-2026: un
+corpus que concatenara dos raíces resolvía `mod.py` de A con `usador.py` de B y
+devolvía un dependiente que no existe; hoy `extractor_ast` lo rechaza con
+`corpus fusiona raices distintas` — salvo que las raíces estén **declaradas**.
 Los corpus sin `locus` (esquema anterior) siguen siendo legibles.
 
-**Raíces omitidas.** Un paquete de namespace puede vivir en varias entradas de
-`sys.path`. La ingesta recorre la **primera** y declara el resto en
-`raices_omitidas` (con el total en `raices_declaradas`): medido el 26-Oct-2026
-en 3.12.13, un namespace con dos rutas publicaba `n_archivos: 1` y el segundo
-`mod_b.py` desaparecía sin conteo. Un corpus con `raices_omitidas` no está
-completo y ahora lo dice. Recorrer las N raíces es un contrato distinto y
-**no** está implementado.
+**Raíces de namespace.** Un paquete de namespace puede vivir en varias entradas
+de `sys.path`. La ingesta recorre **todas** las declaradas, cada una con su
+propio `locus`, y las publica en `raices_ingeridas` (`raiz`, `locus` y
+`n_archivos` por raíz); `raices_declaradas` conserva las rutas y
+`raices_omitidas` queda vacía. Medido el 26-Oct-2026 en 3.12.13: antes de este
+cambio un namespace con dos rutas publicaba `n_archivos: 1` y el segundo
+`mod_b.py` desaparecía sin conteo; hoy publica `n_archivos: 2` con dos `locus`
+distintos y el impacto atraviesa las raíces. Un `rel` presente en dos raíces no
+se resuelve adivinando —Python tomaría la primera de `sys.path`—: el consumidor
+falla cerrado con `rel ambiguo entre raices`. `raices_ingeridas` es la
+declaración que distingue un namespace legítimo de una fusión a mano.
 
 # HUELLA-README-IMPACTO-CONSUMER-20261026
 El consumidor `extractor_ast.impacto_importaciones(corpus, objetivo)` devuelve
