@@ -328,6 +328,31 @@ def test_corpus_sin_locus_sigue_siendo_legible(tmp_path):
     assert impacto["solo_type_checking"] == ["a.py", "c.py"]
 
 
+def test_corpus_de_una_raiz_sin_declaracion_sigue_siendo_legible(tmp_path):
+    """El corpus publicado entre `d3edeab` y H4 no lleva `raices_ingeridas`.
+
+    Lleva `locus` en el sobre y en cada archivo, asi que el guard podria
+    tomarlo por una fusion si la declaracion fuera obligatoria. No lo es: un
+    corpus de UNA raiz es legible sin declarar. Sin este caso, quitar el
+    `locus` del sobre del conjunto declarado no enrojecia ninguna prueba
+    (medido en el banco de mutaciones de H4).
+    """
+    paquete = "preh4_20261026"
+    nombre = _paquete(
+        tmp_path, paquete,
+        a=('from typing import TYPE_CHECKING\n'
+           'if TYPE_CHECKING:\n'
+           '    from . import b\n'),
+        b="VALUE = 1\n",
+        c="import %s.a\n" % paquete,
+    )
+    corpus = ING.ingerir_paquete(nombre, base=str(tmp_path))
+    del corpus["raices_ingeridas"]
+    impacto = EXT.impacto_importaciones(corpus, "b.py")
+    assert impacto["runtime"] == []
+    assert impacto["solo_type_checking"] == ["a.py", "c.py"]
+
+
 # HUELLA-TEST-NS-N-RAICES-20261026
 def test_namespace_recorre_todas_las_raices(tmp_path, monkeypatch):
     """Un paquete de namespace en dos rutas: se ingieren LAS DOS raices.
