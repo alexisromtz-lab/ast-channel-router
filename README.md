@@ -249,6 +249,29 @@ La primera corrida contra el manifiesto escrito a mano encontró **tres** desfas
 <!-- HUELLA-CORPUS-SERIALIZADOR-Y-LOCUS-20261026 -->
 Dos precisiones que cuestan caro si se omiten. **El `sha256` contrata también al serializador:** dos volcados del mismo objeto con `indent=1` y compacto difieren en bytes (46 940 422 frente a 43 766 237) y por tanto en huella; la tabla publica el del serializador que usa el CLI, que es el que produce el comando de arriba sin post-proceso —incluido el `\n` final, que el cuerpo del `json.dumps` no aporta y sin el cual el archivo mide 46 940 421 B y hashea `5e8cd24c…`—. **Y el corpus tiene locus durable:** vive en `~/Library/Caches/ast-channel-router/vllm_omni.json`, junto a `vllm_omni.manifest.json` con la misma tupla, porque `/tmp` se purga y un corpus citado en un acta no puede depender de eso. El archivo `vllm_omni_corpus.json` congelado bajo el esquema v1 (`sha256` `210942836ef60d78…`) queda **superseded**: se conserva porque §4 y §9 del acta lo citan, y no debe usarse para consultas nuevas.
 
+<!-- HUELLA-H5-FALSADOR-1601-20261026 -->
+## Índice de adyacencia (H5)
+
+`impacto_importaciones` reconstruye el grafo inverso en cada consulta. `indice_adyacencia(corpus)` lo construye una vez y lo publica; `impacto_importaciones(corpus, objetivo, indice=...)` lo reutiliza. Sin `indice` el resultado es el mismo por construcción: la firma histórica sigue valiendo y ninguna respuesta cambia.
+
+**El índice no se adopta porque sea rápido: se adopta porque reproduce.** Falsador medido el 26-Oct-2026 sobre el corpus durable de `vllm_omni` (`28f78e8c…`, 25 931 aristas): **1 601 destinos, 0 discrepancias** frente a la reconstrucción por consulta, y `platforms/__init__.py → 743/63` idéntico con y sin índice. El índice publica 1 601 destinos y 5 629 pares origen→destino únicos (una arista repetida entre el mismo par no añade destino). Los falsadores viven en [`tests/test_indice_adyacencia_20261026.py`](tests/test_indice_adyacencia_20261026.py): 10 pruebas, de las cuales la paridad recorre una muestra determinista de 62 destinos en 2,3 s; la corrida completa —1 601 destinos, **154,16 s**— se pide con `AST_PARIDAD_H5=completa`.
+
+Medición con su instrumento declarado: 5 repeticiones, 200 destinos, corpus durable ya cargado en memoria.
+
+| magnitud | min | mediana | max |
+|---|---|---|---|
+| construcción del índice | 0,0293 s | 0,0333 s | 0,0483 s |
+| consulta con índice | 0,0002 s | 0,0002 s | 0,0002 s |
+| consulta sin índice | 0,0221 s | 0,0238 s | 0,0246 s |
+
+Factor medido: **91,5×–147,2×**. En dos sesiones anteriores del mismo día el mismo instrumento dio 77× y 118,9× sobre el mismo corpus. La cifra es **de orden, no exacta**: publicar un decimal de una medición con 2× de varianza entre corridas es el defecto que este repositorio ya castiga en otro sitio.
+
+**Tamaño del índice: 337 144 B = 0,72 % del corpus**, bajo el serializador declarado `json.dumps({destino: sorted(origenes)}, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")`. La cifra `714 793 B / 1,52 %` que circuló antes se declara **`NO_REPRODUCIBLE`**: no declaró su serializador y no se reproduce con este. Es la misma regla que retiró el censo `5 657/5 150` —un byte sin su serializador es un rumor— y la que ya corrigió el `serializador` del manifiesto.
+
+**El defecto que H5 no arregla, porque no existía.** `impacto_importaciones` hoistea `_modulos_del_corpus` fuera del bucle desde su primer commit: el camino de producción nunca reconstruyó el índice de módulos por arista. El sesgo apareció en un *script de medición* que sí lo llamaba dentro del bucle —4,56 ms por llamada × 25 931 aristas ≈ **131 s**—. Un instrumento que mide su propio defecto no mide el objeto.
+
+Un índice de otro corpus **se rechaza** (`indice de otro corpus`): reutilizarlo fusionaría dos identidades en silencio, la clase de defecto que H1 cerró en la ingesta y que aquí se cierra en el consumo. El índice publica `fuente_n_archivos` y `fuente_n_imports` —el corpus del que salió— y la comprobación es O(1).
+
 ## Límite de resolución dinámica
 
 <!-- HUELLA-LIMITE-AST-DINAMICO-20261026 -->

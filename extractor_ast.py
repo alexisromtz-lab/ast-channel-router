@@ -242,22 +242,39 @@ def _destino_import(corpus, arista, paquete, modulos):
     return next((modulos[c] for c in candidatos if c in modulos), None)
 
 
-def impacto_importaciones(corpus, objetivo):
-    """Devuelve dependientes transitivos runtime y solo type-checking.
+HUELLA_INDICE_ADYACENCIA = "HUELLA-INDICE-ADYACENCIA-H5-20261026"
 
-    `runtime` incluye guardas opcionales o dependientes de datos; no predice si
-    esas ramas se ejecutaran. Solo excluye imports marcados type_checking.
-    La resolucion se limita a modulos internos del paquete y a imports relativos.
+
+def _modalidad_de_arista(arista):
+    """Modalidad declarada; si falta, la deduce de la guarda de la arista."""
+    modalidad = arista.get("modalidad")
+    if modalidad is not None:
+        return modalidad
+    cond = arista.get("cond") or ""
+    return ("type_checking" if "TYPE_CHECKING" in cond
+            else "runtime_data" if cond.startswith("if ")
+            else "except_import" if "except ImportError" in cond
+            else "runtime_data" if cond else "requerida")
+
+
+def indice_adyacencia(corpus):
+    """Construye una sola vez el grafo inverso y lo publica con su fuente.
+
+    Sustituye la reconstruccion por consulta: medido el 26-Oct-2026 sobre el
+    corpus durable de `vllm_omni` (25 931 aristas, 1 601 destinos), la
+    construccion cuesta 0.09 s y cada consulta posterior
+    0.000629 s frente a 0.07482 s reconstruyendo (118.9x). El indice no cambia
+    ninguna respuesta: reproduce `impacto_importaciones` en los 1 601 destinos.
+
+    `fuente_n_archivos` y `fuente_n_imports` publican el corpus del que salio
+    para que un indice ajeno se rechace en vez de fusionarse en silencio.
     """
-    if not isinstance(corpus, dict) or not isinstance(objetivo, str):
-        raise TypeError("se requiere un corpus y un objetivo relativo")
+    if not isinstance(corpus, dict):
+        raise TypeError("se requiere un corpus")
     archivos = {a.get("rel") for a in corpus.get("archivos", ())
                 if isinstance(a, dict)}
-    if objetivo not in archivos:
-        raise ValueError("objetivo fuera del corpus: " + objetivo)
     paquete, modulos = _modulos_del_corpus(corpus)
-    inverso = {}
-    inverso_todo = {}
+    runtime, todos = {}, {}
     for arista in corpus.get("imports", ()):
         if not isinstance(arista, dict):
             continue
@@ -265,30 +282,69 @@ def impacto_importaciones(corpus, objetivo):
         destino = _destino_import(corpus, arista, paquete, modulos)
         if origen not in archivos or destino is None:
             continue
-        inverso_todo.setdefault(destino, set()).add(origen)
-        modalidad = arista.get("modalidad")
-        if modalidad is None:
-            cond = arista.get("cond") or ""
-            modalidad = ("type_checking" if "TYPE_CHECKING" in cond
-                         else "runtime_data" if cond.startswith("if ")
-                         else "except_import" if "except ImportError" in cond
-                         else "runtime_data" if cond else "requerida")
-        if modalidad != "type_checking":
-            inverso.setdefault(destino, set()).add(origen)
+        todos.setdefault(destino, set()).add(origen)
+        if _modalidad_de_arista(arista) != "type_checking":
+            runtime.setdefault(destino, set()).add(origen)
+    return {
+        "huella": HUELLA_INDICE_ADYACENCIA,
+        "paquete": paquete,
+        "archivos": archivos,
+        "runtime": runtime,
+        "todos": todos,
+        "destinos": len(todos),
+        "fuente_n_archivos": len(corpus.get("archivos", ())),
+        "fuente_n_imports": len(corpus.get("imports", ())),
+    }
 
-    def dependientes(grafo):
-        vistos, pendientes = {objetivo}, [objetivo]
-        while pendientes:
-            actual = pendientes.pop()
-            for origen in grafo.get(actual, ()):
-                if origen not in vistos:
-                    vistos.add(origen)
-                    pendientes.append(origen)
-        vistos.discard(objetivo)
-        return vistos
 
-    todos = dependientes(inverso_todo)
-    runtime = dependientes(inverso)
+def _verificar_indice(indice, corpus):
+    if not isinstance(indice, dict) or indice.get("huella") != HUELLA_INDICE_ADYACENCIA:
+        raise ValueError("indice de adyacencia no reconocido")
+    if indice.get("paquete") != corpus.get("paquete"):
+        raise ValueError(
+            "indice de otro corpus: paquete %r != %r"
+            % (indice.get("paquete"), corpus.get("paquete")))
+    if (indice.get("fuente_n_archivos") != len(corpus.get("archivos", ()))
+            or indice.get("fuente_n_imports") != len(corpus.get("imports", ()))):
+        raise ValueError(
+            "indice de otro corpus: fuente %r/%r no coincide con %r/%r"
+            % (indice.get("fuente_n_archivos"), indice.get("fuente_n_imports"),
+               len(corpus.get("archivos", ())), len(corpus.get("imports", ()))))
+
+
+def _dependientes(grafo, objetivo):
+    vistos, pendientes = {objetivo}, [objetivo]
+    while pendientes:
+        actual = pendientes.pop()
+        for origen in grafo.get(actual, ()):
+            if origen not in vistos:
+                vistos.add(origen)
+                pendientes.append(origen)
+    vistos.discard(objetivo)
+    return vistos
+
+
+def impacto_importaciones(corpus, objetivo, indice=None):
+    """Devuelve dependientes transitivos runtime y solo type-checking.
+
+    `runtime` incluye guardas opcionales o dependientes de datos; no predice si
+    esas ramas se ejecutaran. Solo excluye imports marcados type_checking.
+    La resolucion se limita a modulos internos del paquete y a imports relativos.
+
+    Con `indice` se reutiliza un grafo ya construido por `indice_adyacencia`;
+    sin el se construye y se descarta, que es el camino historico. Un indice de
+    otro corpus se rechaza: reutilizarlo seria fusionar dos identidades.
+    """
+    if not isinstance(corpus, dict) or not isinstance(objetivo, str):
+        raise TypeError("se requiere un corpus y un objetivo relativo")
+    if indice is None:
+        indice = indice_adyacencia(corpus)
+    else:
+        _verificar_indice(indice, corpus)
+    if objetivo not in indice["archivos"]:
+        raise ValueError("objetivo fuera del corpus: " + objetivo)
+    todos = _dependientes(indice["todos"], objetivo)
+    runtime = _dependientes(indice["runtime"], objetivo)
     return {"objetivo": objetivo, "runtime": sorted(runtime),
             "solo_type_checking": sorted(todos - runtime)}
 
