@@ -25,6 +25,7 @@ existe, si pierde el `qual`, si inventa una condicion donde no la hay, o si
 los conteos dejan de cuadrar con la lista publicada.
 """
 
+import importlib
 import json
 import os
 import pathlib
@@ -325,3 +326,32 @@ def test_corpus_sin_locus_sigue_siendo_legible(tmp_path):
     impacto = EXT.impacto_importaciones(corpus, "b.py")
     assert impacto["runtime"] == []
     assert impacto["solo_type_checking"] == ["a.py", "c.py"]
+
+
+def test_namespace_declara_las_raices_omitidas(tmp_path, monkeypatch):
+    """Un paquete de namespace en dos rutas: se ingiere una y se declara la otra.
+
+    Medido el 26-Oct-2026 en 3.12.13: `find_spec` declaraba dos locations y la
+    ingesta recorria solo la primera, con `mod_b.py` desaparecido sin conteo.
+    La omision se sigue cometiendo —recorrer N raices es otro contrato— pero
+    ahora el corpus la nombra.
+    """
+    nombre = "nsprobe_20261026"
+    for base in ("ns1", "ns2"):
+        (tmp_path / base / nombre).mkdir(parents=True)
+    (tmp_path / "ns1" / nombre / "mod_a.py").write_text("A = 1\n", encoding="utf-8")
+    (tmp_path / "ns2" / nombre / "mod_b.py").write_text("B = 1\n", encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path / "ns2"))
+    monkeypatch.syspath_prepend(str(tmp_path / "ns1"))
+    importlib.invalidate_caches()
+    corpus = ING.ingerir_paquete(nombre)
+    esperadas = [os.path.realpath(tmp_path / b / nombre) for b in ("ns1", "ns2")]
+    assert corpus is not None
+    assert [a["rel"] for a in corpus["archivos"]] == ["mod_a.py"]
+    assert corpus["raices_declaradas"] == esperadas
+    assert corpus["raices_omitidas"] == esperadas[1:]
+    assert corpus["locus"] == ING.hashlib.sha256(esperadas[0].encode("utf-8")).hexdigest()
+    con_base = ING.ingerir_paquete(nombre, base=str(tmp_path / "ns2"))
+    assert con_base["archivos"][0]["rel"] == "mod_b.py"
+    assert con_base["raices_declaradas"] == [esperadas[1]]
+    assert con_base["raices_omitidas"] == []

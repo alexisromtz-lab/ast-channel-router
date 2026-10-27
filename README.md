@@ -87,6 +87,14 @@ resolvía `mod.py` de A con `usador.py` de B y devolvía un dependiente que no
 existe; hoy `extractor_ast` lo rechaza con `corpus fusiona raices distintas`.
 Los corpus sin `locus` (esquema anterior) siguen siendo legibles.
 
+**Raíces omitidas.** Un paquete de namespace puede vivir en varias entradas de
+`sys.path`. La ingesta recorre la **primera** y declara el resto en
+`raices_omitidas` (con el total en `raices_declaradas`): medido el 26-Oct-2026
+en 3.12.13, un namespace con dos rutas publicaba `n_archivos: 1` y el segundo
+`mod_b.py` desaparecía sin conteo. Un corpus con `raices_omitidas` no está
+completo y ahora lo dice. Recorrer las N raíces es un contrato distinto y
+**no** está implementado.
+
 # HUELLA-README-IMPACTO-CONSUMER-20261026
 El consumidor `extractor_ast.impacto_importaciones(corpus, objetivo)` devuelve
 los dependientes transitivos internos en `runtime` y los alcanzables solo al

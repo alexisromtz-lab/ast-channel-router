@@ -79,6 +79,12 @@ LOCUS DE RAIZ
   corpus sin `locus` (esquema anterior) sigue siendo legible: la ausencia no es
   ambigua porque ese corpus declara una sola raiz.
 
+RAICES OMITIDAS
+  Un paquete de namespace puede vivir en varias entradas de `sys.path`. La
+  ingesta recorre la primera y declara el resto en `raices_omitidas`, con el
+  total en `raices_declaradas`. Un corpus con `raices_omitidas` no esta
+  completo: lo dice. Con `base` explicito las dos listas son la raiz pedida.
+
 Uso:
     python3 ingesta_ast_20261019.py --paquete json
     python3 ingesta_ast_20261019.py --paquete json --json
@@ -373,12 +379,33 @@ def _recorrer(nodo, prefijo, rel, lineas, salida):
 
 
 # HUELLA-LOCUS-CORPUS-RAIZ-RESUELTA-20261026
+# HUELLA-RAICES-OMITIDAS-DECLARADAS-20261026
+def _raices_declaradas(paquete):
+    """Todas las raices que el interprete declara para el paquete.
+
+    Un paquete de namespace puede vivir en varias entradas de `sys.path`; el
+    corpus ingiere la primera y OMITE las demas. Se publican para que la
+    omision tenga nombre y conteo en vez de ser una ausencia.
+    """
+    try:
+        spec = importlib.util.find_spec(paquete)
+    except (ImportError, ValueError):
+        return []
+    if spec is None:
+        return []
+    return [os.path.realpath(loc)
+            for loc in list(spec.submodule_search_locations or ())
+            if os.path.isdir(loc)]
+
+
 def ingerir_paquete(paquete, base=None):
     raiz, _ = resolver_raiz(paquete, base)
     if raiz is None:
         return None
     raiz_abs = os.path.realpath(raiz)
     locus = hashlib.sha256(raiz_abs.encode("utf-8")).hexdigest()
+    declaradas = _raices_declaradas(paquete) if base is None else [raiz_abs]
+    omitidas = [r for r in declaradas if r != raiz_abs]
     archivos, nodos, ilegibles, imports = [], [], [], []
     for r, dirs, ficheros in os.walk(raiz):
         dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d != "__pycache__")
@@ -411,7 +438,8 @@ def ingerir_paquete(paquete, base=None):
     imports.sort(key=lambda a: (a["rel"], a["linea"], a["modulo"], a["nombre"] or ""))
     return {"esquema": "ingesta_ast/v2", "huella": HUELLA, "paquete": paquete,
             "raiz": raiz_abs, "raiz_rel": os.path.relpath(raiz, RAIZ),
-            "locus": locus, "n_archivos": len(archivos),
+            "locus": locus, "raices_declaradas": declaradas,
+            "raices_omitidas": omitidas, "n_archivos": len(archivos),
             "n_ilegibles": len(ilegibles), "ilegibles": ilegibles,
             "n_nodos": len(nodos), "n_imports": len(imports),
             "n_imports_cond": sum(1 for a in imports if a["cond"]),
