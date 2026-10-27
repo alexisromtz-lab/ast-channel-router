@@ -384,12 +384,15 @@ def _recorrer(nodo, prefijo, rel, lineas, salida):
 
 # HUELLA-LOCUS-CORPUS-RAIZ-RESUELTA-20261026
 # HUELLA-RAICES-OMITIDAS-DECLARADAS-20261026
+# HUELLA-CORPUS-LOCUS-VLLM-OMNI-20261026
 def _raices_declaradas(paquete):
     """Todas las raices que el interprete declara para el paquete.
 
-    Un paquete de namespace puede vivir en varias entradas de `sys.path`; el
-    corpus ingiere la primera y OMITE las demas. Se publican para que la
-    omision tenga nombre y conteo en vez de ser una ausencia.
+    Un paquete de namespace puede vivir en varias entradas de `sys.path`.
+    Desde H4 el corpus las ingiere TODAS, cada una con su propio `locus`; esta
+    funcion publica la lista para que el sobre la declare antes de recorrerla.
+    `raices_omitidas` solo puede dispararse si una raiz deja de ser directorio
+    entre `find_spec` y el recorrido.
     """
     try:
         spec = importlib.util.find_spec(paquete)
