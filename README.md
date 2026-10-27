@@ -222,7 +222,7 @@ El corpus que sostiene la auditoría del PR 9129 no es una cifra de chat: es un 
 | modalidades | `requerida` 24 613 · `runtime_data` 702 · `type_checking` 400 · `except_import` 216 |
 | raíces de namespace | **1**, `raices_omitidas` vacío |
 | `sha256` del corpus | `28f78e8cb1706fadb310d0b9a9180e6dd48fbea595e96f12df16f576c5789bbb` |
-| serializador | `json.dumps(ensure_ascii=False, indent=1, sort_keys=True)` |
+| serializador | `json.dumps(ensure_ascii=False, indent=1, sort_keys=True) + '\n'` |
 | tamaño | 46 940 422 B |
 
 Comando de reproducción, con el checkout en `PYTHONPATH`:
@@ -234,10 +234,20 @@ PYTHONPATH=/ruta/al/checkout/vllm-omni uv run --no-project --python 3.12.13 -- \
 
 **Por qué la corrección de H4 no mueve estas cifras (medido 26-Oct-2026).** `vllm_omni` declara **una sola** raíz en `submodule_search_locations`, así que el defecto de H4 —ingerir solo la primera— no tocaba este corpus. Regenerado bajo el esquema v2, el conjunto de `rel`, el multiconjunto de aristas y los tres conteos coinciden con el corpus congelado bajo v1, y `impacto_importaciones('platforms/__init__.py')` devuelve **743 runtime + 63 sólo `type_checking`** en las dos versiones. El corpus v1 sigue siendo legible (`test_corpus_de_una_raiz_sin_declaracion_sigue_siendo_legible`): regenerar no era obligatorio para reproducir el 743/63. La v2 —ya producida y pineada en la tabla, y la única que debe usarse para consultas nuevas— añade `locus` por archivo y `puntos_ciegos`.
 
-El corpus no se versiona —es dato derivado de decenas de MB—. Su identidad viaja en el `sha256` de esta tabla y en `LEVEL3_IMPACT_CORPUS_SHA256`, que el motor compara contra el archivo medido antes de cargarlo.
+El corpus no se versiona —es dato derivado de decenas de MB—. Su identidad viaja en el `sha256` de esta tabla y en el manifiesto hermano, que el motor compara contra el archivo medido antes de cargarlo.
+
+<!-- HUELLA-MANIFIESTO-CORPUS-POR-MEDICION-20261026 -->
+**El manifiesto no se escribe a mano.** `manifiesto_corpus_20261026.py` deriva cada celda de medición del propio corpus y verifica el serializador reproduciendo los bytes; la proveniencia (`comando`, `fuente_checkout`, `fuente_commit`, `python`, `medido_en_utc`) se hereda del manifiesto previo o se declara con `--prov clave=valor`. Sin `--comprobar` escribe el hermano de forma atómica; con `--comprobar` no escribe nada y devuelve RC 1 nombrando la celda desfasada.
+
+```bash
+uv run --no-project --python 3.12.13 -- python manifiesto_corpus_20261026.py \
+  ~/Library/Caches/ast-channel-router/vllm_omni.json --comprobar   # RC 0 · 19 celdas
+```
+
+La primera corrida contra el manifiesto escrito a mano encontró **tres** desfases reales sobre 18 celdas: el `serializador` declaraba la llamada sin el LF final (un byte, y con ese byte la firma deja de ser reproducible), y faltaban `objetivos` y el `objetivo` del impacto. Las otras quince —`bytes`, `sha256`, los tres conteos, las cuatro modalidades y las dos raíces— ya coincidían: el manifiesto era correcto en lo que declaraba y mudo en lo que omitía.
 
 <!-- HUELLA-CORPUS-SERIALIZADOR-Y-LOCUS-20261026 -->
-Dos precisiones que cuestan caro si se omiten. **El `sha256` contrata también al serializador:** dos volcados del mismo objeto con `indent=1` y compacto difieren en bytes (46 940 422 frente a 43 766 237) y por tanto en huella; la tabla publica el del serializador que usa el CLI, que es el que produce el comando de arriba sin post-proceso. **Y el corpus tiene locus durable:** vive en `~/Library/Caches/ast-channel-router/vllm_omni.json`, junto a `vllm_omni.manifest.json` con la misma tupla, porque `/tmp` se purga y un corpus citado en un acta no puede depender de eso. El archivo `vllm_omni_corpus.json` congelado bajo el esquema v1 (`sha256` `210942836ef60d78…`) queda **superseded**: se conserva porque §4 y §9 del acta lo citan, y no debe usarse para consultas nuevas.
+Dos precisiones que cuestan caro si se omiten. **El `sha256` contrata también al serializador:** dos volcados del mismo objeto con `indent=1` y compacto difieren en bytes (46 940 422 frente a 43 766 237) y por tanto en huella; la tabla publica el del serializador que usa el CLI, que es el que produce el comando de arriba sin post-proceso —incluido el `\n` final, que el cuerpo del `json.dumps` no aporta y sin el cual el archivo mide 46 940 421 B y hashea `5e8cd24c…`—. **Y el corpus tiene locus durable:** vive en `~/Library/Caches/ast-channel-router/vllm_omni.json`, junto a `vllm_omni.manifest.json` con la misma tupla, porque `/tmp` se purga y un corpus citado en un acta no puede depender de eso. El archivo `vllm_omni_corpus.json` congelado bajo el esquema v1 (`sha256` `210942836ef60d78…`) queda **superseded**: se conserva porque §4 y §9 del acta lo citan, y no debe usarse para consultas nuevas.
 
 ## Límite de resolución dinámica
 
