@@ -74,6 +74,19 @@ recortada a dos aristas:
   `asname="d"`. Los puntos relativos se preservan (`.`, `..paquete`).
 - `n_imports` y `n_imports_cond` son el denominador: el descarte se publica.
 
+<!-- HUELLA-README-LOCUS-RAIZ-20261026 -->
+**Locus de raíz.** La identidad de un archivo es el par `(locus, rel)`. `rel`
+es la ruta relativa a la raíz ingerida; `locus` es el `sha256` de la raíz
+**absoluta** resuelta con `realpath`, publicado una vez en el sobre y repetido
+en cada entrada de `archivos`. Sin él, dos paquetes homónimos en raíces
+distintas —o dos copias del mismo paquete— publican el mismo `paquete` y los
+mismos `rel`: son indistinguibles. `raiz` publica la ruta absoluta; `raiz_rel`
+es la relativa al checkout de la herramienta (informativa, cambia si el corpus
+viaja). Medido el 26-Oct-2026: un corpus que concatenara las dos raíces
+resolvía `mod.py` de A con `usador.py` de B y devolvía un dependiente que no
+existe; hoy `extractor_ast` lo rechaza con `corpus fusiona raices distintas`.
+Los corpus sin `locus` (esquema anterior) siguen siendo legibles.
+
 # HUELLA-README-IMPACTO-CONSUMER-20261026
 El consumidor `extractor_ast.impacto_importaciones(corpus, objetivo)` devuelve
 los dependientes transitivos internos en `runtime` y los alcanzables solo al

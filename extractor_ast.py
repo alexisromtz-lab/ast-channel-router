@@ -139,7 +139,37 @@ def canales_de_fuente(codigo, rel=""):
 
 # HUELLA-EXTRACTOR-AST-IMPACTO-IMPORTS-20261026
 # HUELLA-EXTRACTOR-IMPACTO-REL-20261026
+# HUELLA-EXTRACTOR-LOCUS-RAIZ-20261026
+def _locus_del_corpus(corpus):
+    """Locus unico del corpus; falla cerrado si concatena raices distintas.
+
+    `rel` es unico dentro de una raiz y ambiguo entre raices. Un corpus que
+    junte dos raices —mismo `paquete`, mismos `rel`— no se resuelve adivinando:
+    se nombra el conflicto. Un corpus sin `locus` (esquema anterior) declara una
+    sola raiz por construccion y devuelve None.
+    """
+    vistas = {}
+    declarado = corpus.get("locus")
+    if isinstance(declarado, str) and declarado:
+        vistas[declarado] = "<corpus>"
+    for archivo in corpus.get("archivos", ()):
+        if not isinstance(archivo, dict):
+            continue
+        propio = archivo.get("locus")
+        if isinstance(propio, str) and propio:
+            vistas.setdefault(propio, archivo.get("rel"))
+    if len(vistas) > 1:
+        raise ValueError(
+            "corpus fusiona raices distintas: "
+            + " · ".join("%s:%s" % (locus[:16], rel)
+                         for locus, rel in sorted(vistas.items(),
+                                                  key=lambda x: str(x[0])))
+        )
+    return next(iter(vistas), None)
+
+
 def _modulos_del_corpus(corpus):
+    _locus_del_corpus(corpus)
     paquete = corpus.get("paquete")
     if not isinstance(paquete, str) or not paquete:
         raise ValueError("corpus sin nombre de paquete")

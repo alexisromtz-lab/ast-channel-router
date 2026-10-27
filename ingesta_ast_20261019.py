@@ -66,6 +66,19 @@ QUE NO HACE
   declara `AUSENTE`, no se busca a ciegas en el disco). Un modulo suelto (un
   `.py`, no un paquete) no se puede recorrer: se declara `NO_ES_PAQUETE`.
 
+LOCUS DE RAIZ
+  La identidad de un archivo es el par (locus, rel): `rel` es la ruta relativa
+  a la raiz ingerida y `locus` es el sha256 de la raiz ABSOLUTA resuelta con
+  `realpath`. Dos paquetes homonimos en raices distintas —o dos copias del
+  mismo paquete— publican el mismo `paquete` y los mismos `rel`; solo el
+  `locus` los distingue. El sobre publica `locus` una vez y cada entrada de
+  `archivos` lo repite, para que un corpus que concatene dos raices sea
+  detectable (el consumidor lo rechaza) en vez de silencioso. `raiz` es la
+  ruta absoluta resuelta; `raiz_rel` es la relativa al checkout de la
+  herramienta y es informativa: cambia si el corpus viaja a otra maquina. Un
+  corpus sin `locus` (esquema anterior) sigue siendo legible: la ausencia no es
+  ambigua porque ese corpus declara una sola raiz.
+
 Uso:
     python3 ingesta_ast_20261019.py --paquete json
     python3 ingesta_ast_20261019.py --paquete json --json
@@ -359,10 +372,13 @@ def _recorrer(nodo, prefijo, rel, lineas, salida):
             _recorrer(hijo, qual + ".", rel, lineas, salida)
 
 
+# HUELLA-LOCUS-CORPUS-RAIZ-RESUELTA-20261026
 def ingerir_paquete(paquete, base=None):
     raiz, _ = resolver_raiz(paquete, base)
     if raiz is None:
         return None
+    raiz_abs = os.path.realpath(raiz)
+    locus = hashlib.sha256(raiz_abs.encode("utf-8")).hexdigest()
     archivos, nodos, ilegibles, imports = [], [], [], []
     for r, dirs, ficheros in os.walk(raiz):
         dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d != "__pycache__")
@@ -373,7 +389,7 @@ def ingerir_paquete(paquete, base=None):
             rel = os.path.relpath(ruta, raiz).replace(os.sep, "/")
             with open(ruta, "rb") as f:
                 datos = f.read()
-            archivos.append({"rel": rel,
+            archivos.append({"rel": rel, "locus": locus,
                              "sha256": hashlib.sha256(datos).hexdigest(),
                              "bytes": len(datos), "puntos_ciegos": None})
             texto = datos.decode("utf-8", "replace")
@@ -394,7 +410,8 @@ def ingerir_paquete(paquete, base=None):
     nodos.sort(key=lambda n: (n["rel"], n["linea"], n["qual"]))
     imports.sort(key=lambda a: (a["rel"], a["linea"], a["modulo"], a["nombre"] or ""))
     return {"esquema": "ingesta_ast/v2", "huella": HUELLA, "paquete": paquete,
-            "raiz": os.path.relpath(raiz, RAIZ), "n_archivos": len(archivos),
+            "raiz": raiz_abs, "raiz_rel": os.path.relpath(raiz, RAIZ),
+            "locus": locus, "n_archivos": len(archivos),
             "n_ilegibles": len(ilegibles), "ilegibles": ilegibles,
             "n_nodos": len(nodos), "n_imports": len(imports),
             "n_imports_cond": sum(1 for a in imports if a["cond"]),

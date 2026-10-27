@@ -26,6 +26,7 @@ los conteos dejan de cuadrar con la lista publicada.
 """
 
 import json
+import os
 import pathlib
 import sys
 
@@ -242,6 +243,85 @@ def test_type_checking_no_cuenta_como_impacto_runtime(tmp_path):
         c=f"import {paquete}.a\n",
     )
     corpus, _ = _aristas(tmp_path, nombre)
+    impacto = EXT.impacto_importaciones(corpus, "b.py")
+    assert impacto["runtime"] == []
+    assert impacto["solo_type_checking"] == ["a.py", "c.py"]
+
+
+# HUELLA-TEST-LOCUS-RAIZ-20261026
+def _homonimos(tmp_path):
+    """Dos raices distintas con el mismo paquete y los mismos `rel`."""
+    for base in ("a", "b"):
+        d = tmp_path / base / "dup"
+        d.mkdir(parents=True)
+        (d / "__init__.py").write_text("", encoding="utf-8")
+        (d / "mod.py").write_text("VAL = 1\n", encoding="utf-8")
+    return (ING.ingerir_paquete("dup", base=str(tmp_path / "a")),
+            ING.ingerir_paquete("dup", base=str(tmp_path / "b")))
+
+
+def test_raices_homonimas_publican_locus_distinto(tmp_path):
+    """`paquete` + `rel` no identifican un archivo: el locus sí.
+
+    El defecto medido el 26-Oct-2026: dos raices homonimas publicaban el mismo
+    `paquete` y los mismos `rel`, y el sobre no tenia donde poner la segunda
+    raiz. Sin locus, `("dup", "mod.py")` designa dos archivos distintos.
+    """
+    ca, cb = _homonimos(tmp_path)
+    assert ca["paquete"] == cb["paquete"] == "dup"
+    assert [x["rel"] for x in ca["archivos"]] == [
+        x["rel"] for x in cb["archivos"]] == ["__init__.py", "mod.py"]
+    assert os.path.isabs(ca["raiz"]) and os.path.isabs(cb["raiz"])
+    assert ca["raiz"] != cb["raiz"]
+    assert ca["locus"] != cb["locus"]
+    assert {x["locus"] for x in ca["archivos"]} == {ca["locus"]}
+    assert {x["locus"] for x in cb["archivos"]} == {cb["locus"]}
+    dos_mod = {(x["locus"], x["rel"])
+               for x in ca["archivos"] + cb["archivos"] if x["rel"] == "mod.py"}
+    assert len(dos_mod) == 2, "mod.py de las dos raices se fusiono en una entrada"
+
+
+def test_corpus_fusionado_falla_cerrado(tmp_path):
+    """Un corpus que mezcla raices no se resuelve adivinando: se rechaza.
+
+    Antes del guard, un corpus fusionado resolvia `mod.py` de la raiz A con
+    `usador.py` de la raiz B —un dependiente que no existe—. El nulo de esta
+    prueba es el corpus sano: sin archivo intruso, el mismo objetivo responde.
+    """
+    ca, cb = _homonimos(tmp_path)
+    assert EXT.impacto_importaciones(ca, "mod.py")["runtime"] == []
+    fusionado = json.loads(json.dumps(ca))
+    fusionado["archivos"] = ca["archivos"] + cb["archivos"]
+    fusionado["n_archivos"] = len(fusionado["archivos"])
+    with pytest.raises(ValueError) as error:
+        EXT.impacto_importaciones(fusionado, "mod.py")
+    assert "fusiona raices distintas" in str(error.value)
+    assert cb["locus"][:16] in str(error.value)
+    with pytest.raises(ValueError):
+        EXT._modulos_del_corpus(fusionado)
+
+
+def test_corpus_sin_locus_sigue_siendo_legible(tmp_path):
+    """El esquema anterior no lleva `locus`: no se vuelve ilegible.
+
+    Es el corpus real medido en disco (43,6 MB) el que no lo lleva; exigirlo
+    romperia el consumidor que hoy responde 743/63 sobre `vllm_omni`.
+    """
+    paquete = "sinlocus_20261026"
+    nombre = _paquete(
+        tmp_path, paquete,
+        a=('from typing import TYPE_CHECKING\n'
+           'if TYPE_CHECKING:\n'
+           '    from . import b\n'),
+        b="VALUE = 1\n",
+        c="import %s.a\n" % paquete,
+    )
+    corpus = ING.ingerir_paquete(nombre, base=str(tmp_path))
+    assert corpus["locus"]
+    for archivo in corpus["archivos"]:
+        del archivo["locus"]
+    del corpus["locus"]
+    del corpus["raiz_rel"]
     impacto = EXT.impacto_importaciones(corpus, "b.py")
     assert impacto["runtime"] == []
     assert impacto["solo_type_checking"] == ["a.py", "c.py"]
