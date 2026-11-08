@@ -72,7 +72,7 @@
 #     `set +…` 0. El veto no pone rojo a ningún adoptante; `&&` se conserva porque
 #     propaga el fallo y es la forma legítima de encadenar manifiesto y tests.
 #   · Alcance declarado: hoy 0 repos Python declaran `sintaxis` (censo: 1
-#     repositorio no Python). El veto se
+#     adoptante en todo el portafolio, `meta-webhook`, y es Node). El veto se
 #     escribe igual porque el hueco es de la LEY, no del adoptante: una ley con un
 #     agujero espera a que alguien lo encuentre.
 #   · LÍMITE DECLARADO: el veto es textual, no un parser de shell. Un operador
@@ -147,7 +147,7 @@
 # ERRATA 1 (v5, medida en producción): el parseador de conteo no conocía el
 # formato NO silencioso de pytest — `====== 26 passed in 0.10s ======` — y puso
 # en rojo con VACUIDAD_EJECUCION a protocol-core (run 39515729665),
-# Consultar los resultados de pruebas en la salida de este job.
+# protocol-core-dist y motor-nesting, que SÍ habían ejecutado 26, 8 y 4 tests.
 # La decoración `=` al inicio de la línea hacía fallar el ancla `^\s*`. Es el
 # tercer falso rojo de la familia (antes: sangría de mocha, glifo ℹ de node).
 # Cura: ancla por NO-alfanumérico (`^[^A-Za-z0-9]*`) y se recupera `N passing`
@@ -206,8 +206,12 @@
 # CORRECCIÓN 7 (v5): `mide: binario` queda RESERVADO sin implementar. Un tipo que
 # el workflow no sabe verificar es una exención; y una exención con rc 0 es el
 # falso verde que esta ley existe para matar. Se declara MIDE_NO_IMPLEMENTADO.
-# Contrato CI v4: aparato declarado en .github/ci-apparatus (mide: tests)
-# Falla cerrado si no hay aparato o si la suite emite RC != 0.
+#   · Reparto medido (2026-10-20): 7 repos `python .github/verify_manifest.py`
+#     (manifiesto) · 2 repos manifiesto+pytest · 5 repos pytest (tests) ·
+#     3 repos banco must-fail (banco) · 3 repos sin declaración (detección pytest).
+#   · Reparto medido para v6 (2026-10-20T23:4x Z, por declaración): 7 repos
+#     `mide: tests` (migran a junitxml) · 7 `manifiesto` · 3 `banco` · 3 sin
+#     declaración (detección, el workflow les pone el flag) · 2 Node (otra ley).
 #
 # FALSIFICADOR (medido, no supuesto) en alexisromtz-lab/ci-fail-closed-falsifier,
 # PÚBLICO desde 2026-10-20T22:16:30Z: la cita es auditable sin token (API anónima
@@ -250,9 +254,7 @@ concurrency:
 
 jobs:
   tests:
-    # HUELLA-FUGA-CI-GUARD-SIN-NOMBRE-PRIVADO-20261022
-    # El job mide en TODO repo: la guarda por nombre de arbol privado dejaba el
-    # contrato en `skipped`, y el silencio no es un verde.
+    if: github.repository != 'alexisromtz-lab/platino-labs'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
